@@ -1,6 +1,6 @@
 ---
 title: "FINM33150 Quant Trading Strategy"
-author: "Alexander Popat, Josh Weekes, Taylor Wood"
+author: "Alexander Popat, Joshua Weekes, Taylor Wood"
 date: "`r Sys.Date()`"
 output: html_document
 ---
@@ -9,7 +9,20 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(readxl)
+library(readr)
+library(Quandl)
+Quandl.api_key("EsFRJz6Xd3CxmytxKgCB")
 source("functions_data_retrieval.R")
+```
+
+```{r}
+options_data <- read_csv(
+  "iwm_hyg_xlf_options_data.csv", 
+  col_types = cols(
+    secid = col_character(), 
+    date = col_date(format = "%Y-%m-%d"), 
+    exdate = col_date(format = "%Y-%m-%d"), 
+    last_date = col_date(format = "%Y-%m-%d")))
 ```
 
 ## Introduction
@@ -110,7 +123,6 @@ BDCs are subject to certain regulatory and legal rules that impact their return 
 
 ```{r CWBDC Data, include=FALSE}
 # The following generates plots based on data obtained from BDCs.com
-
 # Download CWBDC data from BDCs.com
 CWBDC_data <- getCWBDCData()
 
@@ -192,7 +204,7 @@ plot_CWBDC_premdis_NAVchg <-
   dplyr::select(`date`, `PremDis`, `CWBDC_NAV`) %>%
   dplyr::filter(`date` <= as.Date("2024-01-31")) %>%
   dplyr::group_by(`year` = lubridate::year(`date`), `month` = lubridate::month(`date`)) %>%
-  dplyr::slice_tail(1) %>%
+  dplyr::slice_tail(n=1) %>%
   dplyr::ungroup() %>%
   dplyr::select(-c(`year`, `month`)) %>%
   dplyr::mutate(
@@ -290,118 +302,86 @@ Due to the lack of volume in BDC and BDC ETF options, we are forced to build the
 The example below is a proof of concept for finding the optimal hedge using OLS regression on all the in-sample data. Regressing the returns of HYG, XLF, and IWM on BIZD, we can use the regression coefficients as our hedge ratios. The regression results below show that over the entire in sample time period from 12/31/2017 through 12/31/2023, the optimal hedge was to use 29% exposure to XLF, 38% exposure to IWM, and 89% exposure to HYG. The R-squared shows that this weighting scheme would hedge 70% of the weekly return volatility in BIZD.
 
 ```{r}
-BIZD <- 
-  Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "BIZD") %>%
+BIZD <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "BIZD") 
+HYG <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "HYG")
+XLF <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "XLF") 
+IWM <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "IWM") 
+
+BIZD_adj_close <-
+  BIZD %>%
   dplyr::arrange(`date`) %>%
   dplyr::select(`date`, `adj_close`) %>%
   dplyr::rename(`BIZD` = `adj_close`)
 
-HYG <- 
-  Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "HYG") %>%
+HYG_adj_close <- 
+  HYG %>%
   dplyr::arrange(`date`) %>%
   dplyr::select(`date`, `adj_close`) %>%
   dplyr::rename(`HYG` = `adj_close`)
   
 
-XLF <- 
-  Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "XLF") %>%
+XLF_adj_close <- 
+  XLF %>%
   dplyr::arrange(`date`) %>%
   dplyr::select(`date`, `adj_close`) %>%
   dplyr::rename(`XLF` = `adj_close`)
 
 
-IWM <- 
-  Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "IWM") %>%
+IWM_adj_close <- 
+  IWM %>%
   dplyr::arrange(`date`) %>%
   dplyr::select(`date`, `adj_close`) %>%
   dplyr::rename(`IWM` = `adj_close`)
 
 
 ETF_Returns <- 
-  BIZD %>%
-  inner_join(HYG, by = "date") %>%
-  inner_join(XLF, by = "date") %>%
-  inner_join(IWM,by = "date") %>%
-  filter(weekdays(`date`) == "Wednesday") %>%
-  mutate(
+  BIZD_adj_close %>%
+  dplyr::inner_join(HYG_adj_close, by = "date") %>%
+  dplyr::inner_join(XLF_adj_close, by = "date") %>%
+  dplyr::inner_join(IWM_adj_close ,by = "date") %>%
+  dplyr::filter(weekdays(`date`) == "Wednesday") %>%
+  dplyr::mutate(
     `BIZD` = `BIZD` / lag(`BIZD`, 1) - 1,
     `HYG` = `HYG` / lag(`HYG`, 1) - 1,
     `XLF` = `XLF` / lag(`XLF`, 1) - 1,
     `IWM` = `IWM` / lag(`IWM`, 1) -1,
     .keep = "unused") %>%
-  slice(-1) %>%
-  filter(`date` >= as.Date("2017-12-31")) %>%
-  filter(`date` <= as.Date("2023-12-31"))
+  dplyr::slice(-1) %>%
+  dplyr::filter(`date` >= as.Date("2017-12-31")) %>%
+  dplyr::filter(`date` <= as.Date("2023-12-31"))
 
-
-
-ols <- lm(BIZD ~  XLF + IWM + HYG, data = test)
+ols <- lm(BIZD ~  XLF + IWM + HYG, data = ETF_Returns)
 
 summary(ols)
 ```
 
+Now that we have the replicating portfolio weights for our optimal hedge, we identify the options needed to create the collar. Below we take a look at the example of how we find the options, and what weights we choose for the portfolio on Jan 6, 2023. We set the parameters to find calls and puts that are 2% out of the money and expire in 1 week. When the target date is between two expiration dates, we buy 2 sets of collars, and weight them so that the weighted average expiration date is our target date. Since it is unlikely that there will be options with a strike price equal to our target moneyness, we again find the options immediately above and below the target strike, and weight them so the average strike is equal to our target strike. We then weight the total collar notional exposure to that of our optimal hedge weight.
+
+The output below shows the sets of options, as well as the target notional amount as a percent of our capital in BIZD.
 
 ```{r}
-# helper function to get beta
-.calccorr <- function(x,y,n){
-  
-  nans <- rep(NA, (n-1))
-  corrs <- NULL
-  
-  for(i in n:length(x)){
-    
-    subx <- x[(i-n+1):i]
-    suby <- y[(i-n+1):i]
-    corr <- cor(subx, suby)
-    #ols <- lm(suby ~ subx)
-    #beta <- as.numeric(ols$coefficients[2])
-    #betas <- append(betas, beta)
-    corrs <- append(corrs, corr)
-  }
-  
-# helper function to get beta
-.calcbeta <- function(x,y,n){
-  
-  nans <- rep(NA, (n-1))
-  betas <- NULL
-  
-  for(i in n:length(x)){
-    subx <- x[(i-n+1):i]
-    suby <- y[(i-n+1):i]
-    ols <- lm(suby ~ subx)
-    beta <- as.numeric(ols$coefficients[2])
-    betas <- append(betas, beta)
-  }
-  
-  return(c(nans, betas))}
+ao_date <- as.Date("2023-01-06")
+target_date <- ao_date + 7
+target_Mny_call <- 1.02
+target_Mny_put <- 0.98
 
-test <- 
-  inner_join(
-    CWBDC_data %>%
-      dplyr::select(`date`, `CWBDC`),
-    SPY %>%
-      rownames_to_column("date") %>%
-      mutate(`date` = as.Date(`date`)) %>%
-      dplyr::select(`date`, `adj_close`) %>%
-      rename(`SPY` = `adj_close`),
-    by = "date") %>%
-  mutate(
-    `CWBDC` = `CWBDC` / lag(`CWBDC`, 1) - 1,
-    `SPY` = `SPY` / lag(`SPY`, 1) - 1,
-    .keep = "unused") %>%
-  
-  mutate(`rollingcorr` = .calccorr(`CWBDC`, `SPY`, 63)) %>%
-  mutate(`rollingbeta` = .calcbeta(`SPY`, `CWBDC`, 63)) %>%
-  mutate(`diff` = `CWBDC` - `SPY` * lag(`rollingbeta`)) %>%
-  filter(date >= as.Date("2016-12-31"))
-  
+XLF_price <- pull(filter(IWM, `date` == ao_date), `close`)
+XLF_hedge_w <- as.numeric(ols$coefficients["XLF"])
+XLF_options <- idOptCollar(
+  ao_date, target_date, "IWM", XLF_price, target_Mny_call, target_Mny_put, options_data, w = XLF_hedge_w)
 
-plotcorr <- 
-  ggplot(test) +
-  aes(x = date, y = rollingcorr^2) +
-  geom_line(colour = "#112446") +
-  theme_minimal()
+IWM_price <- pull(filter(IWM, `date` == ao_date), `close`)
+IWM_hedge_w <- as.numeric(ols$coefficients["IWM"])
+IWM_options <- idOptCollar(
+  ao_date, target_date, "IWM", IWM_price, target_Mny_call, target_Mny_put, options_data, w = IWM_hedge_w)
 
+HYG_price <- pull(filter(HYG, `date` == ao_date), `close`)
+HYG_hedge_w <- as.numeric(ols$coefficients["HYG"])
+HYG_options <- idOptCollar(
+  ao_date, target_date, "HYG", HYG_price, target_Mny_call, target_Mny_put, options_data, w = HYG_hedge_w)
 
-
+bind_rows(
+  XLF_options,
+  IWM_options,
+  HYG_options)
 ```
