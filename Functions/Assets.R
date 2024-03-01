@@ -1,20 +1,21 @@
 # Asset (S4 Class) --------------------------------------------------------
-setClass(
-  "Asset",
-  representation(
-    secid = "character",
-    returns = "numeric"))
+# Parent class for all assets
+setClass("Asset", representation(secid = "character"))
 
-# Cash
+
+# Cash (S4 Class) ---------------------------------------------------------
+# Object representing cash asset
 setClass(
   "Cash",
-  representation(
-    dailyrate = "numeric"),
-  contains = "Asset")
+  contains = "Asset",
+  representation(dailyrate = "numeric"))
 
-# Equity
+
+# Equity (S4 Class) -------------------------------------------------------
+# Object representing an equity asset
 setClass(
   "Equity",
+  contains = "Asset",
   representation(
     open = "numeric",
     high = "numeric",
@@ -27,8 +28,7 @@ setClass(
     adj_high = "numeric",
     adj_low = "numeric",
     adj_close = "numeric",
-    adj_volume = "numeric"),
-  contains = "Asset")
+    adj_volume = "numeric"))
 
 setClass(
   "Option",
@@ -62,8 +62,33 @@ setClass(
     call = "Option_Call",
     put = "Option_Put"))
 
-setGeneric("secid", function(asset) standardGeneric("secid"))
-setMethod("secid", signature(asset = "Asset"), function(asset) asset@secid)
+
+setMethod("secid", signature(obj = "Asset"), function(obj) obj@secid)
+
+
+
+# Assets (S4 Class) -------------------------------------------------------
+# Object representing a list of assets
+setClass(
+  "Assets",
+  representation(secids = "character", assets = "list"),
+  prototype(secids = NULL, assets = NULL),
+  validity = function(object){
+    all(sapply(object@assets, \(x) c("Asset") %in% is(x)))})
+
+setMethod("secid", signature(obj = "Assets"), function(obj) obj@secids)
+setMethod("assets", signature(obj = "Assets"), function(obj) obj@assets)
+
+setMethod("+", signature(e1 = "Assets", e2 = "Asset"),
+  function(e1, e2){
+
+    if(secid(e2) %in% e1@secids) return(e1)
+
+    new("Assets",
+      secids = c(secid(e1), secid(e2)),
+      assets = c(e1@assets, e2))
+})
+
 
 # Create Equity Object from Quandl Data -----------------------------------
 QuandlEquity <- function(secid, data){
@@ -121,6 +146,6 @@ WRDSOption <- function(data){
 
 # Create Cash Object with Constant Rate -----------------------------------
 CashConstantRate <- function(rate){
-  return(new("Cash", secid = "cash", dailyrate = rate))
-  }
+  new("Cash", secid = "cash", dailyrate = rate)}
+
 

@@ -58,25 +58,25 @@ setClass(
   contains = "Trade_Target")
 
 
-setGeneric("newTradeTarget", function(asset, ...) standardGeneric("newTradeTarget"))
-
 # TradeTarget for Equity objects sets the trade amount
-setMethod("newTradeTarget", signature(asset = "Equity"),
-  function(asset, trade_date, side, pct_capital, price_type = "close", ...){
+setMethod("newTradeTarget", signature(obj = "Equity"),
+  function(obj, trade_date, side, pct_capital, price_type = "close", ...){
 
     if(price_type == "close"){
-      price <- asset@close[as.character(trade_date)]
+      price <- obj@close[as.character(trade_date)]
     }
 
     return(
       new("Trade_Target_Equity",
           trade_date = trade_date,
-          secid = asset@secid,
+          secid = secid(obj),
           asset = asset,
           price = price,
           target_type = "pct.capital",
           target_amount = pct_capital,
           side = side))})
+
+
 arrange_trades <- function(trades){
 
   side.factor <- factor(c("Buy", "Sell"), ordered = T)

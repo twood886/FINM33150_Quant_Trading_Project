@@ -12,9 +12,15 @@ setClass(
 
 
 # Update Portfolio Method -------------------------------------------------
-setGeneric("updatePortfolio", function(portfolio, ...) standardGeneric("updatePortfolio"))
-setMethod("updatePortfolio", signature(portfolio = "Portfolio"),
-  function(portfolio, assets, ))
+setGeneric("updatePortfolio", function(portfolio, assets, ...) standardGeneric("updatePortfolio"))
+setMethod("updatePortfolio", signature(portfolio = "Portfolio", assets = "Assets"),
+  function(portfolio, assets)){
+
+
+
+
+
+}
 
 
 

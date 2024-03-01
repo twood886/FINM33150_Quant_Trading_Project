@@ -23,3 +23,24 @@ named_group_split <- function (...) {
                                                              sep = "~~")
   group_split(data) %>% set_names(names)
 }
+
+
+expandDate <- function(x){
+  xdf <-
+    tibble::tibble(
+      "date" = as.Date(names(x)),
+      "x" = x) %>%
+    dplyr::arrange(`date`)
+
+  alldates <- seq.Date(min(xdf$date), max(xdf$date), "days")
+
+  expx <-
+    dplyr::full_join(
+      xdf,
+      tibble::tibble("date" = alldates),
+      by = "date") %>%
+    dplyr::arrange(`date`) %>%
+    tidyr::fill(`x`, .direction = "down")
+
+  setNames(expx$x, expx$date)
+}
