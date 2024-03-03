@@ -9,26 +9,64 @@ setClass(
     capital = "numeric",
     cash = "numeric"))
 
-
+setMethod("secid", signature("Portfolio"), function(obj) secid(obj@positions))
 
 # Update Portfolio Method -------------------------------------------------
 setGeneric("updatePortfolio", function(portfolio, assets, ...) standardGeneric("updatePortfolio"))
-setMethod("updatePortfolio", signature(portfolio = "Portfolio", assets = "Assets"),
-  function(portfolio, assets)){
+setMethod("updatePortfolio", signature(obj1 = "Portfolio", obj2 = "Assets"),
+  function(portfolio, assets, date){
+
+
+
+
+})
+
+
+
+setMethod("addTrades", signature(obj1 = "Portfolio", obj2 = "Trade_Target"),
+  function(obj1, obj2, trade.cost){
+
+    capital <- obj1@capital
+    cash <- obj1@cash
+
+
+
+    if(secid(obj2) %in% secid(obj1))
+
+
+
+  }
+)
 
 
 
 
 
-}
+
+setMethod("addTrades", signature(obj1 = "Portfolio", obj2 = "Trade_Targets"),
+  function(obj1, obj2, trade.cost, ...){
+
+    for(trade in obj2){
 
 
 
+      trade <- target2trade()
 
-setGeneric("addtrade", function(portfolio, trade, ...) standardGeneric("addtrade"))
 
-setMethod("addtrade", signature(portfolio = "Portfolio_Periods", trade = "Trade_Target"),
-  function(portfolio, trade, trade.cost, ...){
+    }
+
+    capital <- obj1@capital
+    cash <- obj1@cash
+
+    for(t in obj2@trade_targets){
+
+      if(secid(t) %in% )
+
+
+
+    }
+
+
 
     if()
 
@@ -48,3 +86,28 @@ setMethod("addtrade", signature(portfolio = "Portfolio_Periods", trade = "Trade_
 
     )
 
+)})
+
+
+
+setMethod("addTrades", signature(obj1 = "Portfolio", obj2 = "Trade_Target"),
+  function(obj1, obj2, trade.cost){
+
+    if(secid(obj2) %in% secid(obj1)){
+
+
+
+    }else{
+
+
+
+
+    }
+
+
+
+
+
+
+
+  })

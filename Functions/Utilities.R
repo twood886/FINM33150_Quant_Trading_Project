@@ -2,13 +2,13 @@
 assignColsNamed <- function(data, col, namecol){
 
   if(namecol %in% colnames(data)){
-    dataname <- data[,{{namecol}}]
+    dataname <- data[,{{namecol}}][[1]]
   }else{
     dataname <- NA
   }
 
   if(col %in% colnames(data)){
-    x <- data[,{{col}}]
+    x <- data[,{{col}}][[1]]
   }else{
     x <- rep(NA, length(dataname))
   }
