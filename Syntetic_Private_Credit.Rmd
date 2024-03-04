@@ -347,13 +347,64 @@ ETF_Returns <-
     `IWM` = `IWM` / lag(`IWM`, 1) -1,
     .keep = "unused") %>%
   dplyr::slice(-1) %>%
-  dplyr::filter(`date` >= as.Date("2017-12-31")) %>%
+  dplyr::filter(`date` >= as.Date("2016-12-31")) %>%
   dplyr::filter(`date` <= as.Date("2023-12-31"))
 
 ols <- lm(BIZD ~  XLF + IWM + HYG, data = ETF_Returns)
-
-summary(ols)
 ```
+
+```{r}
+ETF_Daily_Returns <- 
+  BIZD_adj_close %>%
+  dplyr::inner_join(HYG_adj_close, by = "date") %>%
+  dplyr::inner_join(XLF_adj_close, by = "date") %>%
+  dplyr::inner_join(IWM_adj_close ,by = "date") %>%
+  dplyr::mutate(
+    `BIZD` = `BIZD` / lag(`BIZD`, 1) - 1,
+    `HYG` = `HYG` / lag(`HYG`, 1) - 1,
+    `XLF` = `XLF` / lag(`XLF`, 1) - 1,
+    `IWM` = `IWM` / lag(`IWM`, 1) -1,
+    .keep = "unused") %>%
+  dplyr::slice(-1) %>%
+  dplyr::filter(`date` >= as.Date("2016-12-31")) %>%
+  dplyr::filter(`date` <= as.Date("2023-12-31"))
+
+ETF_Weekly_Returns <-
+  BIZD_adj_close %>%
+  dplyr::inner_join(HYG_adj_close, by = "date") %>%
+  dplyr::inner_join(XLF_adj_close, by = "date") %>%
+  dplyr::inner_join(IWM_adj_close ,by = "date") %>%
+  
+
+
+test <- ETF_Returns %>%
+  nest(`return` = c(everything(), -`date`), .by ="date") %>%
+  mutate(
+    `exp_returns` = purrr::accumulate(`return`, bind_rows),
+    `roll_returns_252` = purrr::accumulate(`return`, roll_bind, 252)) %>%
+  filter(`date` >= as.Date("2017-12-31")) %>%
+  mutate(
+    `ols_expand_resid` = map2(lag(`exp_returns`, 1), `return`, ols_hedgefit, y = "BIZD"),
+    `ols_expand_resid_exp` = map2(lag(`exp_returns`, 1), `return`, ols_hedgefit, y = "BIZD", weighted = T),
+    `ols_box_resid` = map2(lag(`roll_returns_252`, 1), `return`, ols_hedgefit, y = "BIZD"),
+    `ols_box_resid_exp` = map2(lag(`roll_returns_252`, 1), `return`, ols_hedgefit, y = "BIZD", weighted = T))
+  
+
+
+fit_test <-
+  test %>%
+  select(
+    `date`, `ols_expand_resid`, `ols_expand_resid_exp`,`ols_box_resid`, `ols_box_resid_exp`) %>%
+  unnest(everything()) %>%
+  pivot_longer(cols = c(everything(), -`date`),names_to = "hedge_type", values_to = "residual") %>%
+  summarise(
+    "MSE" = mean(`residual`^2, na.rm = T),
+    .by = `hedge_type`)
+
+```
+
+
+
 
 Now that we have the replicating portfolio weights for our optimal hedge, we identify the options needed to create the collar. Below we take a look at the example of how we find the options, and what weights we choose for the portfolio on Jan 6, 2023. We set the parameters to find calls and puts that are 2% out of the money and expire in 1 week. When the target date is between two expiration dates, we buy 2 sets of collars, and weight them so that the weighted average expiration date is our target date. Since it is unlikely that there will be options with a strike price equal to our target moneyness, we again find the options immediately above and below the target strike, and weight them so the average strike is equal to our target strike. We then weight the total collar notional exposure to that of our optimal hedge weight.
 
