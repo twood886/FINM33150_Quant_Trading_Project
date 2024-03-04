@@ -4,39 +4,35 @@ setClass(
     dates = "Date",
     assets = "Assets",
     portfolio = "list",
-    trades = "list"),
+    trades = "Trade_Targets"),
   prototype(
     dates = NULL,
-    assets = new("Assets")))
+    assets = new("Assets"),
+    trades = new("Trade_Targets")))
 
 
 setMethod("assets", "Backtest", function(obj) obj@assets)
 
-setGeneric("assetids", function(backtest) standardGeneric("assetids"))
-setMethod("assetids", signature(backtest = "Backtest"),
-  function(backtest){
-    assets <- assets(backtest)
-    if(length(assets) != 0){
-      secids <- sapply(assets, secid)
+setMethod("secid", signature(obj = "Backtest"),
+  function(obj){
+    a <- assets(obj)
+    if(length(obj) != 0){
+      return(sapply(obj, secid))
     }else{
       return(NULL)
     }
   })
 
-setGeneric("assets<-", function(x, assets) standardGeneric("assets<-"))
-setMethod("assets<-", signature(x = "Backtest"), function(x, assets){
-    x@assets <- assets
-    x
-  })
+
+
+
+
 
 
 backtestTradeTargets <- function(dates, trade_targets, cash_rates, initial.capital = 1000000, transaction.cost = 0){
 
   # Create backtest object
-  BT <- new("Backtest", dates = dates)
-
-  # Sort Trades
-  trade_targets <- arrange_trades(trade_targets)
+  BT <- new("Backtest", dates = dates, assets = assets(trade_targets), trades = trade_targets)
 
   # Create cash asset and assign it to the backtest
   if(length(cash_rates) == 1){
@@ -48,7 +44,7 @@ backtestTradeTargets <- function(dates, trade_targets, cash_rates, initial.capit
   # Create the initial cash position based on the initial capital supplied
   cash_position <- new(
     "Position",
-    date = dates[1],
+    date = date,
     secid = "cash",
     type = class(cash)[1],
     position = initial.capital,

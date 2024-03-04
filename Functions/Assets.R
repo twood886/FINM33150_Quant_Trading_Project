@@ -35,6 +35,7 @@ setClass(
   representation(
     symbol = "character",
     underlying = "character",
+    underlying_close = "numeric",
     exdate = "Date",
     contract_size = "numeric",
     strike_price = "numeric",
@@ -63,8 +64,32 @@ setClass(
     put = "Option_Put"))
 
 
+
 setMethod("secid", signature(obj = "Asset"), function(obj) obj@secid)
 
+setMethod("price", signature(obj = "Equity"),
+  function(obj, date){
+    price_dates <- as.Date(names(obj@close))
+    date_last <- max(price_dates[which(price_dates <= date)])
+    obj@close[[as.character(date_last)]]
+    })
+
+
+setMethod("price", signature(obj = "Option"),
+  function(obj, date){
+    price_dates <- as.Date(names(obj@best_mid))
+    date_last <- max(price_dates[which(price_dates <= date)])
+    obj@best_mid[[as.character(date_last)]]
+    })
+
+
+setMethod("+", signature(e1 = "Asset", e2 = "Asset"),
+  function(e1,e2){
+    a <- new("Assets")
+    a <- a + e1
+    a <- a + e2
+    return(a)
+})
 
 
 # Assets (S4 Class) -------------------------------------------------------
@@ -78,7 +103,6 @@ setClass(
 
 setMethod("secid", signature(obj = "Assets"), function(obj) obj@secids)
 setMethod("assets", signature(obj = "Assets"), function(obj) obj@assets)
-
 setMethod("+", signature(e1 = "Assets", e2 = "Asset"),
   function(e1, e2){
 
@@ -92,12 +116,8 @@ setMethod("+", signature(e1 = "Assets", e2 = "Asset"),
 
 # Create Equity Object from Quandl Data -----------------------------------
 QuandlEquity <- function(secid, data){
-  returns <- data$adj_close / lag(data$adj_close, n = 1) -1
-  names(returns) <- data$date
-
   new("Equity",
     secid = secid,
-    returns = returns,
     open = assignColsNamed(data, "open", "date"),
     high = assignColsNamed(data, "high", "date"),
     low = assignColsNamed(data, "low", "date"),
@@ -131,7 +151,6 @@ WRDSOption <- function(data){
   option@best_bid = assignColsNamed(data, "best_bid", "date")
   option@best_offer = assignColsNamed(data, "best_offer", "date")
   option@best_mid <- rowMeans(cbind(option@best_bid, option@best_offer), na.rm = F)
-  option@best_mid = assignColsNames()
   option@volume = assignColsNamed(data, "volume", "date")
   option@open_interest = assignColsNamed(data, "open_interest", "date")
   option@impl_volatility = assignColsNamed(data, "impl_volatility", "date")
