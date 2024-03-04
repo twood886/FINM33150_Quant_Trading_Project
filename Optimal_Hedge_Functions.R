@@ -15,17 +15,16 @@ hedgefit <- function(test_data, weights){
   return(residual)
 }
 
-ols_coeff <- function(train_data, y, weighted = F, lamda = .9){
+ols_coeff <- function(train_data, y, lamda = NULL){
   # Function to return the OLS coefficients for Optimal Hedging
   x = colnames(train_data)[-which(colnames(train_data)==y)]
-  n <- nrow(ETF_Returns)
+  n <- nrow(train_data)
 
-  if(weighted == F){
+  if(is.null(lamda)){
     formula <- paste(y, "~", paste(x,collapse="+"))
     ols <- lm(formula, train_data)
     coeff <- -ols$coefficients[-1]
   }else{
-    n <- nrow(train_data)
     #weights = (1 - lamda)^((n - 1):0)
     weights = lamda^(seq(n, 1, by = -1))
     ewma <- colSums(weights * train_data) / sum(weights)
@@ -42,9 +41,9 @@ ols_coeff <- function(train_data, y, weighted = F, lamda = .9){
   return(coeff)
 }
 
-ols_hedgefit <- function(train_data, test_data, y, weighted = F){
+ols_hedgefit <- function(train_data, test_data, y, lamda= NULL){
   if(is.null(train_data)) return(NA)
-  weights <- ols_coeff(train_data, y, weighted)
+  weights <- ols_coeff(train_data, y, lamda)
   residual <- hedgefit(test_data, weights)
   return(residual)
 }

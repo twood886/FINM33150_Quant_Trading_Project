@@ -371,34 +371,50 @@ ETF_Daily_Returns <-
 
 ETF_Weekly_Returns <-
   BIZD_adj_close %>%
-  dplyr::inner_join(HYG_adj_close, by = "date") %>%
-  dplyr::inner_join(XLF_adj_close, by = "date") %>%
-  dplyr::inner_join(IWM_adj_close ,by = "date") %>%
-  
+  dplyr::inner_join(expandDate(HYG_adj_close), by = "date") %>%
+  dplyr::inner_join(expandDate(XLF_adj_close), by = "date") %>%
+  dplyr::inner_join(expandDate(IWM_adj_close), by = "date") %>%
+  dplyr::mutate(
+    `BIZD` = `BIZD` / lag(`BIZD`, 7) - 1,
+    `HYG` = `HYG` / lag(`HYG`, 7) - 1,
+    `XLF` = `XLF` / lag(`XLF`, 7) - 1,
+    `IWM` = `IWM` / lag(`IWM`, 7) -1,
+    .keep = "unused") %>%
+  dplyr::slice(-(1:7)) %>%
+  dplyr::filter(`date` >= as.Date("2016-12-31")) %>%
+  dplyr::filter(`date` <= as.Date("2023-12-31"))
 
 
-test <- ETF_Returns %>%
-  nest(`return` = c(everything(), -`date`), .by ="date") %>%
+
+test <- 
+  ETF_Returns <-
+  dplyr::left_join(
+    tidyr::nest(ETF_Daily_Returns, `return_daily` = c(everything(), -`date`), .by ="date"),
+    tidyr::nest(ETF_Weekly_Returns, `return_weekly` = c(everything(), -`date`), .by ="date"),
+    by = "date") %>%
   mutate(
-    `exp_returns` = purrr::accumulate(`return`, bind_rows),
-    `roll_returns_252` = purrr::accumulate(`return`, roll_bind, 252)) %>%
+    `exp_returns` = purrr::accumulate(`return_daily`, bind_rows),
+    `roll_returns_252` = purrr::accumulate(`return_daily`, roll_bind, 252)) %>%
   filter(`date` >= as.Date("2017-12-31")) %>%
   mutate(
-    `ols_expand_resid` = map2(lag(`exp_returns`, 1), `return`, ols_hedgefit, y = "BIZD"),
-    `ols_expand_resid_exp` = map2(lag(`exp_returns`, 1), `return`, ols_hedgefit, y = "BIZD", weighted = T),
-    `ols_box_resid` = map2(lag(`roll_returns_252`, 1), `return`, ols_hedgefit, y = "BIZD"),
-    `ols_box_resid_exp` = map2(lag(`roll_returns_252`, 1), `return`, ols_hedgefit, y = "BIZD", weighted = T))
+    `ols_expand_resid` = map2(lag(`exp_returns`, 7), `return_weekly`, ols_hedgefit, y = "BIZD"),
+    `ols_expand_resid_exp` = map2(lag(`exp_returns`, 7), `return_weekly`, ols_hedgefit, y = "BIZD", lamda = .9),
+    `ols_box_resid` = map2(lag(`roll_returns_252`, 7), `return_weekly`, ols_hedgefit, y = "BIZD"),
+    `ols_box_resid_exp` = map2(lag(`roll_returns_252`, 7), `return_weekly`, ols_hedgefit, y = "BIZD", lamda = .9))
+  
   
 
 
 fit_test <-
   test %>%
+  dplyr::filter(weekdays(`date`) == "Wednesday") %>%
   select(
     `date`, `ols_expand_resid`, `ols_expand_resid_exp`,`ols_box_resid`, `ols_box_resid_exp`) %>%
   unnest(everything()) %>%
   pivot_longer(cols = c(everything(), -`date`),names_to = "hedge_type", values_to = "residual") %>%
   summarise(
     "MSE" = mean(`residual`^2, na.rm = T),
+    "SD" = sd(`residual`, na.rm = T) * sqrt(52),
     .by = `hedge_type`)
 
 ```

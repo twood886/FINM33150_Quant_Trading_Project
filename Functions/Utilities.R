@@ -26,21 +26,30 @@ named_group_split <- function (...) {
 
 
 expandDate <- function(x){
-  xdf <-
+  y <- x
+  if(typeof(x) == "double"){
+    x <-
     tibble::tibble(
       "date" = as.Date(names(x)),
       "x" = x) %>%
     dplyr::arrange(`date`)
+  }
 
-  alldates <- seq.Date(min(xdf$date), max(xdf$date), "days")
+  alldates <- seq.Date(min(x$date), max(x$date), "days")
 
   expx <-
     dplyr::full_join(
-      xdf,
+      x,
       tibble::tibble("date" = alldates),
       by = "date") %>%
     dplyr::arrange(`date`) %>%
-    tidyr::fill(`x`, .direction = "down")
+    tidyr::fill(c(everything(),-`date`), .direction = "down")
 
-  setNames(expx$x, expx$date)
+  if(typeof(y) == "double"){
+    out <- setNames(expx$x, expx$date)
+  }else{
+    out <- expx
+  }
+
+  return(out)
 }
