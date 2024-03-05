@@ -43,25 +43,29 @@ mgarch_weights <- function(train_data, y, fwd = 1){
   n <- nrow(train_data)
 
   # Create univariate GARCH model with ARMA(1,1) and GARCH(1,1)
-  xspec = rugarch::ugarchspec(
+  xspec <- rugarch::ugarchspec(
     mean.model = list(armaOrder = c(1, 1)),
     variance.model = list(garchOrder = c(1,1), model = 'sGARCH'),
     distribution.model = 'norm')
   # Replicate univariate GARCH model for each asset
-  uspec = multispec(replicate(ncol(train_data), xspec))
+  uspec <- rugarch::multispec(replicate(ncol(train_data), xspec))
   # Create DCC(1,1) specification
-  spec = dccspec(uspec = uspec, dccOrder = c(1, 1), distribution = 'mvnorm')
+  spec <- rmgarch::dccspec(uspec = uspec, dccOrder = c(1, 1), distribution = 'mvnorm')
   # Create MGARCH model
-  multf = rugarch::multifit(
+  multf <- rugarch::multifit(
     uspec,
     data.frame(train_data),
     solver = "hybrid")
   # Fit MGARCH model
-  fit = dccfit(spec, data = train_data, fit.control = list(eval.se = TRUE), fit = multf)
+  fit <- rmgarch::dccfit(
+    spec,
+    data = train_data,
+    fit.control = list(eval.se = TRUE),
+    fit = multf)
   # Use model to forecast ahead
-  fwdEst <- dccforecast(fit, n.ahead = fwd)
+  fwdEst <- rmgarch::dccforecast(fit, n.ahead = fwd)
   # Retrieve forecasted covariance matrix
-  cov <- rcov(fwdEst)[1][[1]][,,fwd]
+  cov <- rmgarch::rcov(fwdEst)[1][[1]][,,fwd]
   # Retrieve forecasted means
   mean <- colMeans(fitted(fwdEst)[,,1])
   # Use forecasted means and coviarance to calculate optimal weights

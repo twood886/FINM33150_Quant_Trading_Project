@@ -396,28 +396,36 @@ BIZD_Weekly_Vol <- BIZD_adj_close %>%
   summarise(`sd` = sd(`BIZD`) * sqrt(52))
 
 
-
-test <- 
-  ETF_Returns <-
+# The following code finds the optimal weights and returns using optimal weights
+# for the following models
+# 1) OLS with expanding data set
+# 2) OLS with expanding data set and exponential decay
+# 3) OLS with rolling 252 days of data
+# 4) MGARCH with expanding data set
+# Optimal weights are calculated on Wednesday using historic daily returns
+Optimal_Weights <- 
   dplyr::left_join(
     tidyr::nest(ETF_Daily_Returns, `return_daily` = c(everything(), -`date`), .by ="date"),
     tidyr::nest(ETF_Weekly_Returns, `return_weekly` = c(everything(), -`date`), .by ="date"),
     by = "date") %>%
   dplyr::mutate(
     `expanding_return` = purrr::accumulate(`return_daily`, bind_rows),
-    `box_return_252` = purrr::accumulate(`return_daily`, roll_bind, 52)) %>%
+    `box_return_252` = purrr::accumulate(`return_daily`, roll_bind, 252)) %>%
   dplyr::filter(weekdays(`date`) == "Wednesday") %>%
   #dplyr::mutate(`expanding_return_weekly` = purrr::accumulate(`return_weekly`, bind_rows)) %>%
   dplyr::filter(`date` >= as.Date("2017-12-31")) %>%
-  # Calculate the target weights with different methods
-  # 1) Expanding returns
-  # 2) Expanding decaying returns
-  # 3) 253 Day Rolling Returns
+  # Calculate the optimal weights
   dplyr::mutate(
     `ols_expand_weights` = purrr::map(`expanding_return`, ols_weights, "BIZD"),
     `ols_expand_exp_weights` = purrr::map(`expanding_return`, ols_weights, "BIZD", lamda = 0.9),
     `ols_box_weights` = purrr::map(`box_return_252`, ols_weights, "BIZD"),
-    `mgarch_weights` = purrr::map(`expanding_return`, mgarch_weights, "BIZD", fwd = 7, .progress = T)) %>%
+    `mgarch_weights` = purrr::map(`expanding_return`, mgarch_weights, "BIZD", fwd = 7, .progress = T))
+
+# Using the optimal weights from above, calculate the forward 1 week returns
+# of hedged portfolio. Forward week returns with collars are calculated with
+# optimal weights. Collard returns assume costless collar on BIZD hedging positions
+Optimal_Weights_Returns <-
+  Optimal_Weights %>%
   # Calculate the returns from the target portfolio
   dplyr::mutate(
     across(
@@ -433,8 +441,8 @@ test <-
       .names = "{.col}_collar_return")) %>%
   dplyr::rename_with(~str_remove(.x, "_weights"), .cols=contains("collar_return"))
 
-fit_test <-
-  test %>%
+Optimal_Weights_Summary <-
+  Optimal_Weights_Returns %>%
   select(c(`date`, contains("hedge_return"), contains("collar_return"))) %>%
   unnest(everything()) %>%
   pivot_longer(cols = c(everything(), -`date`),names_to = "return_metric", values_to = "return") %>%
@@ -445,8 +453,6 @@ fit_test <-
     "Downside_Vol" = sd(ifelse(`return`>0, 0, `return`), na.rm =T) * sqrt(52),
     "Min" = min(`return`, na.rm = T),
     .by = `return_metric`)
-
-
 ```
 
 
