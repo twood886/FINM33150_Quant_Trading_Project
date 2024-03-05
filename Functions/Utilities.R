@@ -26,7 +26,18 @@ named_group_split <- function (...) {
 
 
 expandDate <- function(x){
+  # Function to expand data for all dates with max and min dates of data
+  # and fill down missing values
+  # Useful for price data to fill in weekends
+  #
+  # Args:
+  #   x: named vector with dates as names or dataframe with "date" column
+  #
+  # Returns:
+  #   named vector with dates as names or dataframe with "date" column
+  #   fills missing dates with previous values
   y <- x
+
   if(typeof(x) == "double"){
     x <-
     tibble::tibble(
@@ -53,3 +64,23 @@ expandDate <- function(x){
 
   return(out)
 }
+
+roll_bind <- function(acc, nxt, n){
+  # Function to bind rows from list of dataframes with max n rows
+  # If number of rows is equal to n before bind, the first row is removed
+  # Used with purrr::accumulate function
+  #
+  # Args:
+  #   acc: existing dataframe
+  #   nxt: dataframe to bound to acc
+  #   n: max number of rows
+  #
+  # Returns:
+  #   dataframe containing n number of rows
+  if(nrow(acc) + nrow(nxt) <= n){
+    bind_rows(acc, nxt)
+  }else{
+    bind_rows(acc[-1,], nxt)
+  }
+}
+

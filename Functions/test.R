@@ -22,6 +22,38 @@ HYG_option <-
   filter(`cp_flag` == "C") %>%
   WRDSOption()
 
+HYG_option@underlying_close <- 74.62
+
+
+HYG_option_trade <- newTradeTarget(HYG_option, as.Date("2023-01-04"), "Buy", "pct", 0.7)
+
 trades <- new("Trade_Targets") +
   BIZD_trade_enter +
-  BIZD_trade_exit
+  BIZD_trade_exit +
+  HYG_option_trade
+
+# Test updating new
+a <- assets(trades)
+obj2 <- assets(a)[[1]]
+equity_position <- new("Position",
+  date = as.Date("2023-01-03"),
+  secid = "BIZD",
+  type = "Equity",
+  position = 100,
+  price = 14.29,
+  value = 1429)
+updatePosition(obj1, obj2, as.Date("2023-01-04"))
+
+obj2 <- assets(a)[[2]]
+option_position <- new("Position",
+  date = as.Date("2023-01-03"),
+  secid = secid(obj2),
+  type = "Option",
+  position = 100,
+  price = price(obj2, as.Date("2023-01-03")),
+  value = 0.05 * 100)
+
+obj1 <- equity_position + option_position
+obj2 <- assets(trades)
+
+test <- updatePosition(obj1, obj2, as.Date("2023-01-04"))

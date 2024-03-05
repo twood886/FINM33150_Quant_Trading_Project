@@ -11,6 +11,9 @@ library(tidyverse)
 library(readxl)
 library(readr)
 library(Quandl)
+library(rugarch)
+library(rmgarch)
+library(metafor)
 Quandl.api_key("EsFRJz6Xd3CxmytxKgCB")
 source("functions_data_retrieval.R")
 ```
@@ -385,6 +388,14 @@ ETF_Weekly_Returns <-
   dplyr::filter(`date` <= as.Date("2023-12-31"))
 
 
+BIZD_Weekly_Vol <- BIZD_adj_close %>%
+  dplyr::mutate(`BIZD` = `BIZD` / lag(`BIZD`, 7) - 1) %>%
+  dplyr::filter(`date` >= as.Date("2017-12-31")) %>%
+  dplyr::filter(`date` <= as.Date("2023-12-31")) %>%
+  dplyr::filter(weekdays(`date`) == "Wednesday") %>%
+  summarise(`sd` = sd(`BIZD`) * sqrt(52))
+
+
 
 test <- 
   ETF_Returns <-
@@ -392,30 +403,49 @@ test <-
     tidyr::nest(ETF_Daily_Returns, `return_daily` = c(everything(), -`date`), .by ="date"),
     tidyr::nest(ETF_Weekly_Returns, `return_weekly` = c(everything(), -`date`), .by ="date"),
     by = "date") %>%
-  mutate(
-    `exp_returns` = purrr::accumulate(`return_daily`, bind_rows),
-    `roll_returns_252` = purrr::accumulate(`return_daily`, roll_bind, 252)) %>%
-  filter(`date` >= as.Date("2017-12-31")) %>%
-  mutate(
-    `ols_expand_resid` = map2(lag(`exp_returns`, 7), `return_weekly`, ols_hedgefit, y = "BIZD"),
-    `ols_expand_resid_exp` = map2(lag(`exp_returns`, 7), `return_weekly`, ols_hedgefit, y = "BIZD", lamda = .9),
-    `ols_box_resid` = map2(lag(`roll_returns_252`, 7), `return_weekly`, ols_hedgefit, y = "BIZD"),
-    `ols_box_resid_exp` = map2(lag(`roll_returns_252`, 7), `return_weekly`, ols_hedgefit, y = "BIZD", lamda = .9))
-  
-  
-
+  dplyr::mutate(
+    `expanding_return` = purrr::accumulate(`return_daily`, bind_rows),
+    `box_return_252` = purrr::accumulate(`return_daily`, roll_bind, 52)) %>%
+  dplyr::filter(weekdays(`date`) == "Wednesday") %>%
+  #dplyr::mutate(`expanding_return_weekly` = purrr::accumulate(`return_weekly`, bind_rows)) %>%
+  dplyr::filter(`date` >= as.Date("2017-12-31")) %>%
+  # Calculate the target weights with different methods
+  # 1) Expanding returns
+  # 2) Expanding decaying returns
+  # 3) 253 Day Rolling Returns
+  dplyr::mutate(
+    `ols_expand_weights` = purrr::map(`expanding_return`, ols_weights, "BIZD"),
+    `ols_expand_exp_weights` = purrr::map(`expanding_return`, ols_weights, "BIZD", lamda = 0.9),
+    `ols_box_weights` = purrr::map(`box_return_252`, ols_weights, "BIZD"),
+    `mgarch_weights` = purrr::map(`expanding_return`, mgarch_weights, "BIZD", fwd = 7, .progress = T)) %>%
+  # Calculate the returns from the target portfolio
+  dplyr::mutate(
+    across(
+      contains("_weights"),
+      ~map2(`return_weekly`, lag(.x, 1), hedgefit), 
+      .names = "{.col}_hedge_return")) %>%
+  dplyr::rename_with(~str_remove(.x, "_weights"), .cols=contains("hedge_return")) %>%
+  # Calculate the returns from the target portfolio with perfect costless collar
+  dplyr::mutate(
+    across(
+      contains("_weights"),
+      ~map2(`return_weekly`, lag(.x, 1), hedgefit_collar, collar_moneyness = c(.99, 1.01)), 
+      .names = "{.col}_collar_return")) %>%
+  dplyr::rename_with(~str_remove(.x, "_weights"), .cols=contains("collar_return"))
 
 fit_test <-
   test %>%
-  dplyr::filter(weekdays(`date`) == "Wednesday") %>%
-  select(
-    `date`, `ols_expand_resid`, `ols_expand_resid_exp`,`ols_box_resid`, `ols_box_resid_exp`) %>%
+  select(c(`date`, contains("hedge_return"), contains("collar_return"))) %>%
   unnest(everything()) %>%
-  pivot_longer(cols = c(everything(), -`date`),names_to = "hedge_type", values_to = "residual") %>%
+  pivot_longer(cols = c(everything(), -`date`),names_to = "return_metric", values_to = "return") %>%
   summarise(
-    "MSE" = mean(`residual`^2, na.rm = T),
-    "SD" = sd(`residual`, na.rm = T) * sqrt(52),
-    .by = `hedge_type`)
+    "Mean" = mean(`return`, na.rm =T) * 52,
+    "MSE" = mean(`return`^2, na.rm = T),
+    "SD" = sd(`return`, na.rm = T) * sqrt(52),
+    "Downside_Vol" = sd(ifelse(`return`>0, 0, `return`), na.rm =T) * sqrt(52),
+    "Min" = min(`return`, na.rm = T),
+    .by = `return_metric`)
+
 
 ```
 
