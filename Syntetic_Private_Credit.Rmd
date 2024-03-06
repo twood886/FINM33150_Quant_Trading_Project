@@ -310,6 +310,8 @@ HYG <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "HYG")
 XLF <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "XLF") 
 IWM <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "IWM") 
 
+
+
 BIZD_adj_close <-
   BIZD %>%
   dplyr::arrange(`date`) %>%
@@ -356,7 +358,18 @@ ETF_Returns <-
 ols <- lm(BIZD ~  XLF + IWM + HYG, data = ETF_Returns)
 ```
 
+Next we will look at different ways to obtain the optimal hedge weights
+
+
 ```{r}
+
+Option_Dates <- options_data %>%
+  filter(ticker == "HYG") %>%
+  dplyr::arrange(`exdate`) %>%
+  dplyr::filter(between(`exdate`, as.Date("2017-12-31"), as.Date("2023-12-31"))) %>%
+  pull(`exdate`) %>%
+  unique()
+
 ETF_Daily_Returns <- 
   BIZD_adj_close %>%
   dplyr::inner_join(HYG_adj_close, by = "date") %>%
@@ -396,13 +409,15 @@ BIZD_Weekly_Vol <- BIZD_adj_close %>%
   summarise(`sd` = sd(`BIZD`) * sqrt(52))
 
 
+
+
 # The following code finds the optimal weights and returns using optimal weights
 # for the following models
 # 1) OLS with expanding data set
 # 2) OLS with expanding data set and exponential decay
 # 3) OLS with rolling 252 days of data
 # 4) MGARCH with expanding data set
-# Optimal weights are calculated on Wednesday using historic daily returns
+# Optimal weights are calculated on last day of week trading
 Optimal_Weights <- 
   dplyr::left_join(
     tidyr::nest(ETF_Daily_Returns, `return_daily` = c(everything(), -`date`), .by ="date"),
@@ -411,15 +426,15 @@ Optimal_Weights <-
   dplyr::mutate(
     `expanding_return` = purrr::accumulate(`return_daily`, bind_rows),
     `box_return_252` = purrr::accumulate(`return_daily`, roll_bind, 252)) %>%
-  dplyr::filter(weekdays(`date`) == "Wednesday") %>%
-  #dplyr::mutate(`expanding_return_weekly` = purrr::accumulate(`return_weekly`, bind_rows)) %>%
-  dplyr::filter(`date` >= as.Date("2017-12-31")) %>%
+  dplyr::filter(`date` %in% Option_Dates) %>%
   # Calculate the optimal weights
   dplyr::mutate(
-    `ols_expand_weights` = purrr::map(`expanding_return`, ols_weights, "BIZD"),
-    `ols_expand_exp_weights` = purrr::map(`expanding_return`, ols_weights, "BIZD", lamda = 0.9),
-    `ols_box_weights` = purrr::map(`box_return_252`, ols_weights, "BIZD"),
-    `mgarch_weights` = purrr::map(`expanding_return`, mgarch_weights, "BIZD", fwd = 7, .progress = T))
+    `fwd` = purrr::map2(`date`, lead(`date`,1), \(x,y) min(7,as.numeric(y-x)) - 2),
+    `BIZD_only_weights` = purrr::map(`return_daily`, lo_weights, y = "BIZD"),
+    `ols_expand_weights` = purrr::map2(`expanding_return`, `fwd`, ols_weights, y = "BIZD", lamda = 1),
+    `ols_expand_exp_weights` = purrr::map2(`expanding_return`, `fwd`, ols_weights, y = "BIZD", lamda = 0.9),
+    `ols_box_weights` = purrr::map2(`box_return_252`, `fwd`,  ols_weights, y = "BIZD", lamda = 1),
+    `mgarch_weights` = purrr::map2(`expanding_return`, `fwd`, mgarch_weights, y = "BIZD", .progress = T))
 
 # Using the optimal weights from above, calculate the forward 1 week returns
 # of hedged portfolio. Forward week returns with collars are calculated with
@@ -428,31 +443,39 @@ Optimal_Weights_Returns <-
   Optimal_Weights %>%
   # Calculate the returns from the target portfolio
   dplyr::mutate(
-    across(
-      contains("_weights"),
-      ~map2(`return_weekly`, lag(.x, 1), hedgefit), 
+    dplyr::across(
+      tidyselect::contains("_weights"),
+      ~purrr::map2(`return_weekly`, lag(.x, 1), hedgefit), 
       .names = "{.col}_hedge_return")) %>%
-  dplyr::rename_with(~str_remove(.x, "_weights"), .cols=contains("hedge_return")) %>%
+  dplyr::rename_with(~stringr::str_remove(.x, "_weights"), .cols=tidyselect::contains("hedge_return")) %>%
   # Calculate the returns from the target portfolio with perfect costless collar
   dplyr::mutate(
-    across(
-      contains("_weights"),
-      ~map2(`return_weekly`, lag(.x, 1), hedgefit_collar, collar_moneyness = c(.99, 1.01)), 
+    dplyr::across(
+      c(tidyselect::contains("_weights"), -contains("BIZD")),
+      ~purrr::map2(`return_weekly`, lag(.x, 1), hedgefit_collar, collar_moneyness = c(.99, 1.01)), 
       .names = "{.col}_collar_return")) %>%
-  dplyr::rename_with(~str_remove(.x, "_weights"), .cols=contains("collar_return"))
+  dplyr::rename_with(~stringr::str_remove(.x, "_weights"), .cols=tidyselect::contains("collar_return")) %>%
+  dplyr::select(c(`date`, tidyselect::contains("hedge_return"), tidyselect::contains("collar_return"))) %>%
+  tidyr::unnest(tidyselect::everything())
+
 
 Optimal_Weights_Summary <-
   Optimal_Weights_Returns %>%
-  select(c(`date`, contains("hedge_return"), contains("collar_return"))) %>%
-  unnest(everything()) %>%
-  pivot_longer(cols = c(everything(), -`date`),names_to = "return_metric", values_to = "return") %>%
-  summarise(
-    "Mean" = mean(`return`, na.rm =T) * 52,
+  tidyr::pivot_longer(
+    cols = c(tidyselect::everything(), -`date`),
+    names_to = "return_metric", 
+    values_to = "return") %>%
+  dplyr::summarise(
+    "Mean Return (Ann)" = mean(`return`, na.rm =T) * 52,
     "MSE" = mean(`return`^2, na.rm = T),
-    "SD" = sd(`return`, na.rm = T) * sqrt(52),
-    "Downside_Vol" = sd(ifelse(`return`>0, 0, `return`), na.rm =T) * sqrt(52),
-    "Min" = min(`return`, na.rm = T),
-    .by = `return_metric`)
+    "Std Dev (Ann)" = sd(`return`, na.rm = T) * sqrt(52),
+    "Downside Std Dev (Ann)" = sd(ifelse(`return`>0, 0, `return`), na.rm =T) * sqrt(52),
+    "Min Weekly Return" = min(`return`, na.rm = T),
+    .by = `return_metric`) %>%
+  dplyr::mutate(
+    "Sharpe" = `Mean Return (Ann)` / `Std Dev (Ann)`,
+    "Sortino" = `Mean Return (Ann)` / `Downside Std Dev (Ann)`
+  )
 ```
 
 
@@ -487,4 +510,16 @@ bind_rows(
   XLF_options,
   IWM_options,
   HYG_options)
+```
+
+```{r}
+option_dates <- options_data %>%
+  #filter(`expiry_indicator` == "w") %>%
+  filter(ticker == "HYG") %>%
+  dplyr::arrange(`exdate`) %>%
+  dplyr::filter(between(`exdate`, as.Date("2017-12-31"), as.Date("2023-12-31"))) %>%
+  pull(`exdate`) %>%
+  unique()
+  
+
 ```
