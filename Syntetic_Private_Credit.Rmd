@@ -293,6 +293,26 @@ The change in valuation as measured by Price to NAV, which is driven by the expe
 plot_CWBDC_premdis_NAVchg 
 ```
 
+## Private Credit vs BDC Volatility
+```{r}
+BIZD_daily_returns <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "BIZD") %>%
+  dplyr::mutate(`return` = `adj_close` / lag(`adj_close`) - 1) %>%
+  dplyr::select(`date`, `return`) %>%
+  dplyr::arrange(`date`)
+
+BIZD_weekly_returns <- BIZD_daily_returns %>%
+  group_by(year(`date`), week(`date`)) %>%
+  dplyr::summarise(`return` = prod(1 + `return`, na.rm = T) - 1, .groups="drop")
+  
+BIZD_monthly_returns <- BIZD_daily_returns %>%
+  group_by(year(`date`), month(`date`)) %>%
+  dplyr::summarise(`return` = prod(1 + `return`, na.rm = T) - 1, .groups="drop")
+
+BIZD_quarterly_returns <- BIZD_daily_returns %>%
+  group_by(year(`date`), quarter(`date`)) %>%
+  dplyr::summarise(`return` = prod(1 + `return`, na.rm = T) - 1, .groups="drop")
+```
+
 ## The Strategy
 
 Out strategy is to take advantage of investor's appetite for private credit exposure, but offer a liquid alternative using protective option collars on BDCs. Since BDCs are essentially publicly trade private credit vehicles, the economic exposure should be similar. Using option collars we can target the volatility levels of returns to try to match the volatility of private credit as an asset class.
@@ -370,43 +390,23 @@ Option_Dates <- options_data %>%
   pull(`exdate`) %>%
   unique()
 
-ETF_Daily_Returns <- 
+ETF_Daily_LNReturns <- 
   BIZD_adj_close %>%
   dplyr::inner_join(HYG_adj_close, by = "date") %>%
   dplyr::inner_join(XLF_adj_close, by = "date") %>%
   dplyr::inner_join(IWM_adj_close ,by = "date") %>%
-  dplyr::mutate(
-    `BIZD` = `BIZD` / lag(`BIZD`, 1) - 1,
-    `HYG` = `HYG` / lag(`HYG`, 1) - 1,
-    `XLF` = `XLF` / lag(`XLF`, 1) - 1,
-    `IWM` = `IWM` / lag(`IWM`, 1) -1,
-    .keep = "unused") %>%
+  dplyr::mutate(dplyr::across(c(dplyr::everything(), -`date`), \(x) log(x) - log(lag(x)))) %>%
   dplyr::slice(-1) %>%
-  dplyr::filter(`date` >= as.Date("2016-12-31")) %>%
-  dplyr::filter(`date` <= as.Date("2023-12-31"))
+  dplyr::filter(between(`date`,as.Date("2016-12-31"), as.Date("2023-12-31")))
 
 ETF_Weekly_Returns <-
   BIZD_adj_close %>%
   dplyr::inner_join(expandDate(HYG_adj_close), by = "date") %>%
   dplyr::inner_join(expandDate(XLF_adj_close), by = "date") %>%
   dplyr::inner_join(expandDate(IWM_adj_close), by = "date") %>%
-  dplyr::mutate(
-    `BIZD` = `BIZD` / lag(`BIZD`, 7) - 1,
-    `HYG` = `HYG` / lag(`HYG`, 7) - 1,
-    `XLF` = `XLF` / lag(`XLF`, 7) - 1,
-    `IWM` = `IWM` / lag(`IWM`, 7) -1,
-    .keep = "unused") %>%
+  dplyr::mutate(dplyr::across(c(dplyr::everything(), -`date`),\(x) x/lag(x, 7) -1)) %>%
   dplyr::slice(-(1:7)) %>%
-  dplyr::filter(`date` >= as.Date("2016-12-31")) %>%
-  dplyr::filter(`date` <= as.Date("2023-12-31"))
-
-
-BIZD_Weekly_Vol <- BIZD_adj_close %>%
-  dplyr::mutate(`BIZD` = `BIZD` / lag(`BIZD`, 7) - 1) %>%
-  dplyr::filter(`date` >= as.Date("2017-12-31")) %>%
-  dplyr::filter(`date` <= as.Date("2023-12-31")) %>%
-  dplyr::filter(weekdays(`date`) == "Wednesday") %>%
-  summarise(`sd` = sd(`BIZD`) * sqrt(52))
+  dplyr::filter(between(`date`,as.Date("2016-12-31"), as.Date("2023-12-31")))
 
 
 
