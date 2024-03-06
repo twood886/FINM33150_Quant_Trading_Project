@@ -19,13 +19,44 @@ source("functions_data_retrieval.R")
 ```
 
 ```{r}
-options_data <- read_csv(
-  "iwm_hyg_xlf_options_data.csv", 
-  col_types = cols(
-    secid = col_character(), 
-    date = col_date(format = "%Y-%m-%d"), 
-    exdate = col_date(format = "%Y-%m-%d"), 
-    last_date = col_date(format = "%Y-%m-%d")))
+BIZD <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "BIZD") 
+HYG <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "HYG")
+XLF <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "XLF") 
+IWM <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "IWM") 
+
+
+options_data <- 
+  readr::read_csv(
+    "iwm_hyg_xlf_options_data.csv", 
+    col_types = cols(
+      secid = col_character(), 
+      date = col_date(format = "%Y-%m-%d"), 
+      exdate = col_date(format = "%Y-%m-%d"), 
+      last_date = col_date(format = "%Y-%m-%d"))) %>%
+  dplyr::left_join(
+    dplyr::bind_rows(XLF, IWM, HYG) %>%
+      dplyr::select(`ticker`, `date`, `close`) %>%
+      dplyr::rename(`underlying_price` = `close`),
+    by = join_by("date", "ticker"))
+
+PD_capital_raise <- 
+  readxl::read_excel(
+    "PitchBook_Q3_2023_Global_Private_Market_Fundraising_Report_Summary_XLS - TW.xlsx", 
+    sheet = "FoF fundraising", 
+    skip = 5, 
+    n_max = 2)
+
+PD_returns <- 
+  readxl::read_excel(
+    "Q3_2023_PitchBook_Private_Capital_Indexes_Summary_XLS_15470.xlsx", 
+    sheet = "Quarterly Returns", 
+    skip = 5) %>%
+  dplyr::rename(`date` = `...1`) %>%
+  dplyr::mutate(`date` = as.Date(`date`)) %>%
+  dplyr::select(`date`, `Private debt`) %>%
+  dplyr::filter(`date` >= as.Date("2004-12-31"))
+
+CWBDC_data <- getCWBDCData()
 ```
 
 ## Introduction
@@ -37,13 +68,6 @@ The purpose of this strategy is to mimic the return and volatility profile of pr
 Private credit as an asset class has attracted nearly $1 trillion in assets since the great financial crisis, as investors sought high yielding and diversifying assets. At the same time, increased financial regulation on banks required lenders to boost capital ratios, lowering their ability to make loans.
 
 ```{r Private Debt Capital Raise, include = FALSE}
-PD_capital_raise <- 
-  readxl::read_excel(
-    "PitchBook_Q3_2023_Global_Private_Market_Fundraising_Report_Summary_XLS - TW.xlsx", 
-    sheet = "FoF fundraising", 
-    skip = 5, 
-    n_max = 2)
-
 plot_PD_capital_raise <-
   PD_capital_raise %>%
   dplyr::rename(`metric` = `...1`) %>%
@@ -84,16 +108,6 @@ plot_PD_capital_raise_cum
 ```
 
 ```{r Private Credit Returns, include = FALSE}
-PD_returns <- 
-  readxl::read_excel(
-    "Q3_2023_PitchBook_Private_Capital_Indexes_Summary_XLS_15470.xlsx", 
-    sheet = "Quarterly Returns", 
-    skip = 5) %>%
-  dplyr::rename(`date` = `...1`) %>%
-  dplyr::mutate(`date` = as.Date(`date`)) %>%
-  dplyr::select(`date`, `Private debt`) %>%
-  dplyr::filter(`date` >= as.Date("2004-12-31"))
-
 PD_ann_ret <- mean(PD_returns$`Private debt`) * 4
 PD_ann_vol <- sd(PD_returns$`Private debt`) * sqrt(4)
 
@@ -126,9 +140,6 @@ BDCs are subject to certain regulatory and legal rules that impact their return 
 
 ```{r CWBDC Data, include=FALSE}
 # The following generates plots based on data obtained from BDCs.com
-# Download CWBDC data from BDCs.com
-CWBDC_data <- getCWBDCData()
-
 # Plot the CWBDC price and total return indexes
 plot_CWBDC_returns <-
   CWBDC_data %>%
@@ -293,6 +304,26 @@ The change in valuation as measured by Price to NAV, which is driven by the expe
 plot_CWBDC_premdis_NAVchg 
 ```
 
+## Private Credit vs BDC Volatility
+```{r}
+BIZD_daily_returns <- BIZD
+  dplyr::mutate(`return` = `adj_close` / lag(`adj_close`) - 1) %>%
+  dplyr::select(`date`, `return`) %>%
+  dplyr::arrange(`date`)
+
+BIZD_weekly_returns <- BIZD_daily_returns %>%
+  group_by(year(`date`), week(`date`)) %>%
+  dplyr::summarise(`return` = prod(1 + `return`, na.rm = T) - 1, .groups="drop")
+  
+BIZD_monthly_returns <- BIZD_daily_returns %>%
+  group_by(year(`date`), month(`date`)) %>%
+  dplyr::summarise(`return` = prod(1 + `return`, na.rm = T) - 1, .groups="drop")
+
+BIZD_quarterly_returns <- BIZD_daily_returns %>%
+  group_by(year(`date`), quarter(`date`)) %>%
+  dplyr::summarise(`return` = prod(1 + `return`, na.rm = T) - 1, .groups="drop")
+```
+
 ## The Strategy
 
 Out strategy is to take advantage of investor's appetite for private credit exposure, but offer a liquid alternative using protective option collars on BDCs. Since BDCs are essentially publicly trade private credit vehicles, the economic exposure should be similar. Using option collars we can target the volatility levels of returns to try to match the volatility of private credit as an asset class.
@@ -305,13 +336,6 @@ Due to the lack of volume in BDC and BDC ETF options, we are forced to build the
 The example below is a proof of concept for finding the optimal hedge using OLS regression on all the in-sample data. Regressing the returns of HYG, XLF, and IWM on BIZD, we can use the regression coefficients as our hedge ratios. The regression results below show that over the entire in sample time period from 12/31/2017 through 12/31/2023, the optimal hedge was to use 29% exposure to XLF, 38% exposure to IWM, and 89% exposure to HYG. The R-squared shows that this weighting scheme would hedge 70% of the weekly return volatility in BIZD.
 
 ```{r}
-BIZD <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "BIZD") 
-HYG <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "HYG")
-XLF <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "XLF") 
-IWM <- Quandl.datatable('QUOTEMEDIA/PRICES', ticker = "IWM") 
-
-
-
 BIZD_adj_close <-
   BIZD %>%
   dplyr::arrange(`date`) %>%
@@ -370,43 +394,23 @@ Option_Dates <- options_data %>%
   pull(`exdate`) %>%
   unique()
 
-ETF_Daily_Returns <- 
+ETF_Daily_LNReturns <- 
   BIZD_adj_close %>%
   dplyr::inner_join(HYG_adj_close, by = "date") %>%
   dplyr::inner_join(XLF_adj_close, by = "date") %>%
   dplyr::inner_join(IWM_adj_close ,by = "date") %>%
-  dplyr::mutate(
-    `BIZD` = `BIZD` / lag(`BIZD`, 1) - 1,
-    `HYG` = `HYG` / lag(`HYG`, 1) - 1,
-    `XLF` = `XLF` / lag(`XLF`, 1) - 1,
-    `IWM` = `IWM` / lag(`IWM`, 1) -1,
-    .keep = "unused") %>%
+  dplyr::mutate(dplyr::across(c(dplyr::everything(), -`date`), \(x) log(x) - log(lag(x)))) %>%
   dplyr::slice(-1) %>%
-  dplyr::filter(`date` >= as.Date("2016-12-31")) %>%
-  dplyr::filter(`date` <= as.Date("2023-12-31"))
+  dplyr::filter(between(`date`,as.Date("2016-12-31"), as.Date("2023-12-31")))
 
 ETF_Weekly_Returns <-
   BIZD_adj_close %>%
   dplyr::inner_join(expandDate(HYG_adj_close), by = "date") %>%
   dplyr::inner_join(expandDate(XLF_adj_close), by = "date") %>%
   dplyr::inner_join(expandDate(IWM_adj_close), by = "date") %>%
-  dplyr::mutate(
-    `BIZD` = `BIZD` / lag(`BIZD`, 7) - 1,
-    `HYG` = `HYG` / lag(`HYG`, 7) - 1,
-    `XLF` = `XLF` / lag(`XLF`, 7) - 1,
-    `IWM` = `IWM` / lag(`IWM`, 7) -1,
-    .keep = "unused") %>%
+  dplyr::mutate(dplyr::across(c(dplyr::everything(), -`date`),\(x) x/lag(x, 7) -1)) %>%
   dplyr::slice(-(1:7)) %>%
-  dplyr::filter(`date` >= as.Date("2016-12-31")) %>%
-  dplyr::filter(`date` <= as.Date("2023-12-31"))
-
-
-BIZD_Weekly_Vol <- BIZD_adj_close %>%
-  dplyr::mutate(`BIZD` = `BIZD` / lag(`BIZD`, 7) - 1) %>%
-  dplyr::filter(`date` >= as.Date("2017-12-31")) %>%
-  dplyr::filter(`date` <= as.Date("2023-12-31")) %>%
-  dplyr::filter(weekdays(`date`) == "Wednesday") %>%
-  summarise(`sd` = sd(`BIZD`) * sqrt(52))
+  dplyr::filter(between(`date`,as.Date("2016-12-31"), as.Date("2023-12-31")))
 
 
 
@@ -427,9 +431,12 @@ Optimal_Weights <-
     `expanding_return` = purrr::accumulate(`return_daily`, bind_rows),
     `box_return_252` = purrr::accumulate(`return_daily`, roll_bind, 252)) %>%
   dplyr::filter(`date` %in% Option_Dates) %>%
+  # Find next option date & calc trading days until
+  dplyr::mutate(
+    `nxt_date` = lead(`date`, 1),
+    `fwd` = purrr::map2(`date`, `nxt_date`, \(x,y) min(7,as.numeric(y-x)) - 2)) %>%
   # Calculate the optimal weights
   dplyr::mutate(
-    `fwd` = purrr::map2(`date`, lead(`date`,1), \(x,y) min(7,as.numeric(y-x)) - 2),
     `BIZD_only_weights` = purrr::map(`return_daily`, lo_weights, y = "BIZD"),
     `ols_expand_weights` = purrr::map2(`expanding_return`, `fwd`, ols_weights, y = "BIZD", lamda = 1),
     `ols_expand_exp_weights` = purrr::map2(`expanding_return`, `fwd`, ols_weights, y = "BIZD", lamda = 0.9),
@@ -513,13 +520,14 @@ bind_rows(
 ```
 
 ```{r}
-option_dates <- options_data %>%
-  #filter(`expiry_indicator` == "w") %>%
-  filter(ticker == "HYG") %>%
-  dplyr::arrange(`exdate`) %>%
-  dplyr::filter(between(`exdate`, as.Date("2017-12-31"), as.Date("2023-12-31"))) %>%
-  pull(`exdate`) %>%
-  unique()
-  
-
+test <- Optimal_Weights %>%
+  dplyr::select(`date`, `nxt_date`, `mgarch_weights`) %>%
+  dplyr::mutate(
+    `options` = pmap(
+      list(`mgarch_weights`, `date`, `nxt_date`),
+      option_collar,
+      options_data = options_data_u,
+      tgt_mny = c(.99, 1.01),
+      .progress = T))
 ```
+
