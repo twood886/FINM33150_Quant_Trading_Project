@@ -1,6 +1,19 @@
-# Functions for Calculating Optimal Hedge Weights -------------------------
+library(tidyverse)
+library(rugarch)
+library(rmgarch)
+library(metafor)
+library(MASS)
 
-ols_weights <- function(train_data, y, lamda = 1){
+
+# Long Only ---------------------------------------------------------------
+lo_weights <- function(train_data, y){
+  x <- colnames(train_data)[-which(colnames(train_data)==y)]
+  return(c(setNames(1, y), setNames(rep(0, length(x)), x)))
+}
+
+
+# Functions for Calculating Optimal Hedge Weights -------------------------
+ols_weights <- function(train_data, y, lamda = 1, fwd=1){
   # Calculate the linear regression optimal hedge weights
   # Can use exponentially decaying weights via lamda
   #
@@ -11,23 +24,31 @@ ols_weights <- function(train_data, y, lamda = 1){
   #
   # Returns:
   #   named numeric vector of optimal weights with value 1 for y variable
+  fwd <- ifelse(is.na(fwd), 5, fwd)
   x <- colnames(train_data)[-which(colnames(train_data)==y)]
   n <- nrow(train_data)
   #weights = (1 - lamda)^((n - 1):0)
   weights = lamda^(seq(n, 1, by = -1))
-  ewma <- colSums(weights * train_data) / sum(weights)
+  ewma <- colSums(weights * train_data) / sum(weights) * fwd
   diff <- as.matrix(sweep(train_data, 2, ewma))
   biased_cov <- t(diff) %*% (weights * diff) / sum(weights)
   bias_correction <- sum(weights)^2 / (sum(weights)^2 - sum(weights^2))
-  ewmc = bias_correction * biased_cov
+  ewmc = bias_correction * biased_cov * fwd
   ols <- metafor::matreg(y = y, x = x, R = ewmc, cov = T, means = ewma, n = n)
   coeff <- setNames(-ols$tab$beta, rownames(ols$tab))[-1]
 
   return(c(setNames(1, y), coeff))
 }
 
-mgarch_weights <- function(train_data, y, fwd = 1){
-  # Calculate optimal hedge weights using multivariate GARCH DCC
+robust_weights <- function(train_data, y){
+  x <- colnames(train_data)[-which(colnames(train_data)==y)]
+  robust_lm <- MASS::rlm(BIZD ~ HYG + XLF + IWM, data = train_data)
+  coeff <- robust_lm$coefficients[-1]
+  return(c(setNames(1, y), coeff))
+}
+
+mgarch_weights <- function(train_data, y, fwd = 5){
+  # Calculate optimal hedge weights using multivaiate GARCH DCC
   # Uses multivariate GARCH with dynamic conditional correlation
   # Calculates forward covariance using GARCH(1,1) and forward mean using ARMA(1,1)
   # Used forward covariance and mean to calculate optimal weights
@@ -39,6 +60,7 @@ mgarch_weights <- function(train_data, y, fwd = 1){
   #
   # Returns:
   #   named numeric vector of optimal weights with value 1 for y variable
+  fwd <- ifelse(is.na(fwd), 5, fwd)
   x <- colnames(train_data)[-which(colnames(train_data)==y)]
   n <- nrow(train_data)
 
@@ -65,9 +87,12 @@ mgarch_weights <- function(train_data, y, fwd = 1){
   # Use model to forecast ahead
   fwdEst <- rmgarch::dccforecast(fit, n.ahead = fwd)
   # Retrieve forecasted covariance matrix
-  cov <- rmgarch::rcov(fwdEst)[1][[1]][,,fwd]
+  #cov <- rmgarch::rcov(fwdEst)[1][[1]][,,fwd]
+  cov <- rowSums(rmgarch::rcov(fwdEst)[[1]], dims = 2)
+
   # Retrieve forecasted means
-  mean <- colMeans(fitted(fwdEst)[,,1])
+  #mean <- colMeans(fitted(fwdEst)[,,1])
+  mean <- colSums(fitted(fwdEst)[,,1])
   # Use forecasted means and coviarance to calculate optimal weights
   ols <- metafor::matreg(y = y, x = x, R = cov, cov = T, means = mean, n = n)
   coeff <- setNames(-ols$tab$beta, rownames(ols$tab))[-1]
