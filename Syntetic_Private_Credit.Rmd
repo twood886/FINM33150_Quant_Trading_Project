@@ -32,7 +32,10 @@ options_data <-
       secid = col_character(), 
       date = col_date(format = "%Y-%m-%d"), 
       exdate = col_date(format = "%Y-%m-%d"), 
-      last_date = col_date(format = "%Y-%m-%d"))) %>%
+      last_date = col_date(format = "%Y-%m-%d")))
+
+options_data <-
+  options_data %>%
   dplyr::left_join(
     dplyr::bind_rows(XLF, IWM, HYG) %>%
       dplyr::select(`ticker`, `date`, `close`) %>%
@@ -530,7 +533,7 @@ Option_trade_ids <- Optimal_Weights %>%
     `options` = purrr::pmap(
       list(`mgarch_weights`, `date`, `nxt_date`),
       option_collar,
-      options_data = options_data,
+      options_data = sub_options_data,
       tgt_mny = c(.99, 1.01),
       .progress = T))
 
@@ -541,7 +544,7 @@ Option_trades_symbols <- Option_trade_ids %>%
 Option_Assets <- options_data %>%
   dplyr::filter(`symbol` %in% Option_trades_symbols$option) %>%
   tidyr::nest(`option_data` = everything(), .by = `symbol`) %>%
-  dplyr::mutate(`option_asset` = map(`option_data`, WRDSOption)) %>%
+  dplyr::mutate(`option_asset` = map(`option_data`, WRDSOption, .progress=T)) %>%
   dplyr::select(`symbol`, `option_asset`)
 
 Option_trades_list <-
@@ -551,40 +554,40 @@ Option_trades_list <-
   tidyr::nest(`weight` = `weight`, .by = c(`date`, `nxt_date`, `option`)) %>%
   dplyr::filter(`nxt_date` < as.Date("2023-02-04")) %>%
   dplyr::left_join(Option_Assets, by = c("option" = "symbol")) %>%
+  dplyr::mutate(`weight` = map(`weight`, \(x) -x)) %>%
   dplyr::mutate(
     `open_trade` = purrr::pmap(
       list(`option_asset`, `date`, `weight`), 
       newTradeTarget, 
-      trade_type = "Open"),
+      target_type = "Open"),
     `close_trade` = purrr::pmap(
       list(`option_asset`, `nxt_date`, `weight`),
       newTradeTarget,
-      trade_type = "Close"))
+      target_type = "Close")) %>%
+  dplyr::mutate(
+    `no_yield` = purrr::map(`open_trade`, \(x) x@cost == 0 & x@side == "Sell")) %>%
+  dplyr::filter(`no_yield` == F)
 
 Option_trade_targets <- new("Trade_Targets",
   trade_targets = c(Option_trades_list$open_trade, 
                     Option_trades_list$close_trade))
 
 BIZD_trade_target_open <- newTradeTarget(
-  QuandlEquity("BIZD", BIZD),
+  #setNames(BIZD, "BIZD"),
+  BIZD,
   trade_date = as.Date("2018-01-05"),
-  side = "Open",
-  pct_capital = 1)
+  target_amount = 1,
+  target_type = "Open",
+  side = "Buy")
 
-BIZD_trade_target_close <- newTradeTarget(
-  QuandlEquity("BIZD", BIZD),
-  trade_date = as.Date("2023-02-04"),
-  side = "Close",
-  pct_capital = 1)
 
-trade_targets <- Option_trade_targets + BIZD_trade_target_open + BIZD_trade_target_close
+trade_targets <- Option_trade_targets + BIZD_trade_target_open
+
+
 ```
 
 ```{r}
-dates <- BIZD %>%
-  dplyr::filter(between(`date`, as.Date("2018-01-05"), as.Date("2023-02-04"))) %>%
-  pull(`date`)
-
+dates <- Option_Dates
 cash_rates <- 0.01
 initial.capital <- 1000000
 transaction.cost <- 0

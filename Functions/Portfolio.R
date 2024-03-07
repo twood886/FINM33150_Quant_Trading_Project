@@ -4,7 +4,7 @@ setClass(
   "Portfolio",
   representation(
     date = "Date",
-    positions = "list",
+    positions = "Positions",
     value = "numeric",
     capital = "numeric",
     cash = "numeric"))
@@ -12,102 +12,43 @@ setClass(
 setMethod("secid", signature("Portfolio"), function(obj) secid(obj@positions))
 
 # Update Portfolio Method -------------------------------------------------
-setGeneric("updatePortfolio", function(portfolio, assets, ...) standardGeneric("updatePortfolio"))
+setGeneric("updatePortfolio", function(obj1, obj2, ...) standardGeneric("updatePortfolio"))
 setMethod("updatePortfolio", signature(obj1 = "Portfolio", obj2 = "Assets"),
-  function(portfolio, assets, date){
+  function(obj1, obj2, date){
 
+    portfolio <- new("Portfolio",
+      date = date,
+      positions = updatePosition(obj1@positions, obj2, date),
+      cash = obj1@cash)
 
-
-
+    portfolio@value <- sum(sapply(portfolio@positions@positions, \(x) x@value)) + portfolio@cash
+    portfolio@capital <- portfolio@value
+    return(portfolio)
 })
 
 
-
-setMethod("addTrades", signature(obj1 = "Portfolio", obj2 = "Trade_Target"),
-  function(obj1, obj2, trade.cost){
-
+setMethod("addTrades", signature(obj1 = "Portfolio", obj2 = "Trade"),
+  function(obj1, obj2){
+    date <- as.Date(obj1@date)
     capital <- obj1@capital
     cash <- obj1@cash
 
+    newposition <- new("Position",
+      date = date,
+      secid = obj2@secid,
+      type = is(obj2@asset)[[1]],
+      position = obj2@number,
+      price = price(obj2@asset, obj2@date),
+      value = obj2@dollar_amount)
 
+    positions <- obj1@positions + newposition
 
-    if(secid(obj2) %in% secid(obj1))
+    new_portfolio <- new("Portfolio",
+        date = date,
+        positions = positions,
+        cash = cash - obj2@dollar_amount - obj2@trade.cost,
+        capital = capital - obj2@trade.cost)
 
+    new_portfolio@value <-  sum(sapply(new_portfolio@positions@positions, \(x) x@value)) + new_portfolio@cash
 
-
-  }
-)
-
-
-
-
-
-
-setMethod("addTrades", signature(obj1 = "Portfolio", obj2 = "Trade_Targets"),
-  function(obj1, obj2, trade.cost, ...){
-
-    for(trade in obj2){
-
-
-
-      trade <- target2trade()
-
-
-    }
-
-    capital <- obj1@capital
-    cash <- obj1@cash
-
-    for(t in obj2@trade_targets){
-
-      if(secid(t) %in% )
-
-
-
-    }
-
-
-
-    if()
-
-    trade_price <- trade@price
-    tgt_trade_dollar_amount <- (trade@target_amount * portfolio@value) / (1 + trade.cost)
-    trade_share_number <- tgt_trade_dollar_amount %/% trade_price
-    trade_dollar_amount <- trade_share_number * trade_price
-    trade_commission <- trade_dollar_amount * trade.cost
-
-
-
-    return(
-      new(
-        "Portfolio_Period",
-        date = portfolio@date,
-
-
-    )
-
-)})
-
-
-
-setMethod("addTrades", signature(obj1 = "Portfolio", obj2 = "Trade_Target"),
-  function(obj1, obj2, trade.cost){
-
-    if(secid(obj2) %in% secid(obj1)){
-
-
-
-    }else{
-
-
-
-
-    }
-
-
-
-
-
-
-
-  })
+    return(new_portfolio)})

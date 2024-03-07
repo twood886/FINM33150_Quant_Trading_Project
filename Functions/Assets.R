@@ -3,14 +3,6 @@
 setClass("Asset", representation(secid = "character"))
 
 
-# Cash (S4 Class) ---------------------------------------------------------
-# Object representing cash asset
-setClass(
-  "Cash",
-  contains = "Asset",
-  representation(dailyrate = "numeric"))
-
-
 # Equity (S4 Class) -------------------------------------------------------
 # Object representing an equity asset
 setClass(
@@ -162,10 +154,3 @@ WRDSOption <- function(data){
 
   return(option)
 }
-
-
-# Create Cash Object with Constant Rate -----------------------------------
-CashConstantRate <- function(rate){
-  new("Cash", secid = "cash", dailyrate = rate)}
-
-

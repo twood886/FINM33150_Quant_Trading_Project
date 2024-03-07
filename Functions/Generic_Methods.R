@@ -24,3 +24,5 @@ setGeneric("addTrades", function(obj1, obj2, ...) standardGeneric("addTrades"))
 
 
 setGeneric("price", function(obj, date) standardGeneric("price"))
+setGeneric("trade_type", function(obj) standardGeneric("trade_type"))
+setGeneric("target2trade", function(obj, ...) standardGeneric("target2trade"))
