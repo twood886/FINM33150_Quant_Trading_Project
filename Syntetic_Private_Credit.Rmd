@@ -520,14 +520,73 @@ bind_rows(
 ```
 
 ```{r}
-test <- Optimal_Weights %>%
+
+sub_options_data <- filter(options_data, `date` %in% as.Date(Optimal_Weights$date))
+
+# Find the option ids to be traded
+Option_trade_ids <- Optimal_Weights %>%
   dplyr::select(`date`, `nxt_date`, `mgarch_weights`) %>%
   dplyr::mutate(
-    `options` = pmap(
+    `options` = purrr::pmap(
       list(`mgarch_weights`, `date`, `nxt_date`),
       option_collar,
-      options_data = options_data_u,
+      options_data = options_data,
       tgt_mny = c(.99, 1.01),
       .progress = T))
+
+Option_trades_symbols <- Option_trade_ids %>%
+  dplyr::select(`options`) %>%
+  tidyr::unnest(tidyselect::everything())
+
+Option_Assets <- options_data %>%
+  dplyr::filter(`symbol` %in% Option_trades_symbols$option) %>%
+  tidyr::nest(`option_data` = everything(), .by = `symbol`) %>%
+  dplyr::mutate(`option_asset` = map(`option_data`, WRDSOption)) %>%
+  dplyr::select(`symbol`, `option_asset`)
+
+Option_trades_list <-
+  Option_trade_ids %>%
+  dplyr::select(`date`, `nxt_date`, `options`) %>%
+  tidyr::unnest(tidyselect::everything()) %>%
+  tidyr::nest(`weight` = `weight`, .by = c(`date`, `nxt_date`, `option`)) %>%
+  dplyr::filter(`nxt_date` < as.Date("2023-02-04")) %>%
+  dplyr::left_join(Option_Assets, by = c("option" = "symbol")) %>%
+  dplyr::mutate(
+    `open_trade` = purrr::pmap(
+      list(`option_asset`, `date`, `weight`), 
+      newTradeTarget, 
+      trade_type = "Open"),
+    `close_trade` = purrr::pmap(
+      list(`option_asset`, `nxt_date`, `weight`),
+      newTradeTarget,
+      trade_type = "Close"))
+
+Option_trade_targets <- new("Trade_Targets",
+  trade_targets = c(Option_trades_list$open_trade, 
+                    Option_trades_list$close_trade))
+
+BIZD_trade_target_open <- newTradeTarget(
+  QuandlEquity("BIZD", BIZD),
+  trade_date = as.Date("2018-01-05"),
+  side = "Open",
+  pct_capital = 1)
+
+BIZD_trade_target_close <- newTradeTarget(
+  QuandlEquity("BIZD", BIZD),
+  trade_date = as.Date("2023-02-04"),
+  side = "Close",
+  pct_capital = 1)
+
+trade_targets <- Option_trade_targets + BIZD_trade_target_open + BIZD_trade_target_close
 ```
 
+```{r}
+dates <- BIZD %>%
+  dplyr::filter(between(`date`, as.Date("2018-01-05"), as.Date("2023-02-04"))) %>%
+  pull(`date`)
+
+cash_rates <- 0.01
+initial.capital <- 1000000
+transaction.cost <- 0
+
+```

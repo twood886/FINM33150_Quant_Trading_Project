@@ -148,6 +148,13 @@ setMethod("+", signature(e1 = "Trade_Targets", e2 = "Trade_Target"),
     return(t)
   })
 
+setMethod("+", signature(e1 = "Trade_Target", e2 = "Trade_Targets"),
+  function(e1, e2){
+    t <- new("Trade_Targets",trade_targets = c(e1, e2@trade_targets))
+    t <- arrange(t)
+    return(t)
+  })
+
 setMethod("assets", signature(obj = "Trade_Targets"),
   function(obj){
     a <- lapply(obj@trade_targets, assets)
@@ -183,11 +190,19 @@ setMethod("newTradeTarget", signature(obj = "Equity"),
           side = side))})
 
 setMethod("newTradeTarget", signature(obj = "Option"),
-  function(obj, trade_date, side, type, pct){
+  function(obj, trade_date, pct = 1, trade_type){
 
-    if(side == "Buy"){
+    trade_date <- max(as.Date(names(obj@best_mid)))
+
+    if(trade_type == "Close"){
+      pct <- -(pct/abs(pct))
+    }
+
+    if(pct > 0){
+      side = "Buy"
       price <- obj@best_offer[[as.character(trade_date)]]
     }else{
+      side = "Sell"
       price <- obj@best_bid[[as.character(trade_date)]]
     }
 
@@ -198,8 +213,9 @@ setMethod("newTradeTarget", signature(obj = "Option"),
         asset = obj,
         side = side,
         price = price,
-        target_type = type,
-        target_amount = pct))
+        target_type = trade_type,
+        target_amount = as.numeric(pct))
+      )
   })
 
 

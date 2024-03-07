@@ -21,7 +21,7 @@
 
   # Weight for the options above and below target strike so weighted average
   # strike is equal to strike price
-  srike_range <- strike_above - strike_below
+  strike_range <- strike_above - strike_below
   w_strike_below <- (strike_above - (target_price * 1000)) / strike_range
   w_strike_above <- 1 - w_strike_below
 
@@ -132,6 +132,68 @@ option_collar <- function(weights, ao_date, ex_date, options_data,
     weights,
     names(weights),
     ~idOptCollar(
-      options_data_u, ao_date, ex_date, .y, tgt_mny, .x))
+      options_data, ao_date, ex_date, .y, tgt_mny, .x))
   return(bind_rows(options))
 }
+
+minimize_delta <- function(calls, puts, current_price, target_moneyness, hedge_ratio) {
+  # Hedge ratio is percentage of hedge per ticker and total_contracts is the total number of contracts to be traded
+  total_contracts <- hedge_ratio * 100
+
+  # Initialize the Gurobi model
+  model <- gurobi::gurobi_model(env = NULL)
+
+  # Reference vars
+  num_calls <- nrow(calls)
+  df <- rbind(calls, puts)
+  n <- nrow(df)
+
+  # Define the integer variables for weights with max value of total_contracts
+  # R's gurobi package uses a different syntax for adding variables
+  for (i in 1:n) {
+    model$addVar(vtype = "I", name = paste0('weights', i), lb = 0, ub = total_contracts)
+  }
+
+  # Define moneyness of calls, puts
+  call_moneyness <- (calls$strike_price - current_price) / current_price
+  put_moneyness <- (current_price - puts$strike_price) / current_price
+  moneyness <- c(call_moneyness, put_moneyness)
+
+  # Create vars for the weighted delta sum and moneyness deviation sum
+  # R's gurobi package uses a different syntax for adding constraints and variables
+  model$addVar(name = 'deviation_sum', lb = 0)
+  model$addVar(name = 'delta_sum', lb = 0)
+
+  # Define delta_sum, deviation_sum
+  # Constraints need to be added using the 'addConstr' function in R's gurobi package
+  model$addConstr(deviation_sum == sum(mapply(function(weight, money) weight * (money - target_moneyness),
+                                              model$getVarByName(paste0('weights', 1:n)), moneyness)), name = "Def_deviation_sum")
+  model$addConstr(delta_sum == 100*total_contracts + 100*(-sum(mapply(function(weight, delta) weight * delta,
+                                                                      model$getVarByName(paste0('weights', 1:num_calls)), df$delta[1:num_calls])) +
+                                                            sum(mapply(function(weight, delta) weight * delta,
+                                                                       model$getVarByName(paste0('weights', (num_calls+1):n)), df$delta[(num_calls+1):n]))), name = "Def_delta_sum")
+
+  # Add constraint to ensure the sum of the weights is the number of total contracts defined by the hedge ratio
+  model$addConstr(sum(model$getVarByName(paste0('weights', 1:num_calls))) == total_contracts, name = 'call_weight_sum')
+  model$addConstr(sum(model$getVarByName(paste0('weights', (num_calls+1):n))) == total_contracts, name = 'put_weight_sum')
+
+  # Set the objective to minimize the delta and deviation_sum
+  # The 'setObjective' function has different syntax in R
+  model$setObjective(delta_sum^2 + deviation_sum, "minimize")
+
+  # Optimize the model
+  result <- gurobi(model, params = list(OutputFlag = 0))
+
+  # Check if the optimization was successful
+  if (result$status == "OPTIMAL") {
+    # Retrieve the optimized weights
+    optimized_weights <- sapply(1:n, function(i) result$x[i])
+    df$weight <- optimized_weights
+    df$moneyness <- moneyness
+    df$total_delta <- 100 * optimized_weights * df$delta
+    return(df[, c('date', 'ticker', 'cp_flag', 'strike_price', 'exdate', 'mid_price', 'weight', 'moneyness', 'total_delta')])
+  }
+
+  if (result$status %in% c("INF_OR_UNBD", "INFEASIBLE")) {
+    print('Model is infeasible')}}
+

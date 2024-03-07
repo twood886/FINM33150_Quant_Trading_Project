@@ -33,7 +33,6 @@ setClass(
 setClass(
   "Option",
   representation(
-    symbol = "character",
     underlying = "character",
     underlying_close = "numeric",
     exdate = "Date",
@@ -135,6 +134,8 @@ QuandlEquity <- function(secid, data){
 # Create Option Object from WRDS Data -------------------------------------
 WRDSOption <- function(data){
 
+  data <- dplyr::arrange(data, `date`)
+
   cp <- data[1,"cp_flag"]
 
   if(cp == "C"){
@@ -142,12 +143,11 @@ WRDSOption <- function(data){
   }else{
     option <- new("Option_Put")
   }
-  option@secid = as.character(data[1, "secid"])
-  option@symbol = as.character(data[1, "symbol"])
+  option@secid = as.character(data[1, "symbol"])
   option@underlying = as.character(data[1,"issuer"])
   option@exdate = data[1, "exdate"][[1]]
   option@contract_size = as.numeric(data[1, "contract_size"])
-  option@strike_price = as.numeric(data[1, "strike_price"])
+  option@strike_price = as.numeric(data[1, "strike_price"] / 1000)
   option@best_bid = assignColsNamed(data, "best_bid", "date")
   option@best_offer = assignColsNamed(data, "best_offer", "date")
   option@best_mid <- rowMeans(cbind(option@best_bid, option@best_offer), na.rm = F)
@@ -158,6 +158,7 @@ WRDSOption <- function(data){
   option@gamma = assignColsNamed(data, "gamma", "date")
   option@vega = assignColsNamed(data, "vega", "date")
   option@theta = assignColsNamed(data, "theta", "date")
+  option@underlying_close = assignColsNamed(data, "underlying_price", "date")
 
   return(option)
 }
