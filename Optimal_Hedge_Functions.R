@@ -47,7 +47,7 @@ robust_weights <- function(train_data, y){
   return(c(setNames(1, y), coeff))
 }
 
-mgarch_weights <- function(train_data, y, fwd = 5){
+mgarch_weights <- function(train_data, y, fwd = 1){
   # Calculate optimal hedge weights using multivaiate GARCH DCC
   # Uses multivariate GARCH with dynamic conditional correlation
   # Calculates forward covariance using GARCH(1,1) and forward mean using ARMA(1,1)
@@ -66,6 +66,11 @@ mgarch_weights <- function(train_data, y, fwd = 5){
 
   # Create univariate GARCH model with ARMA(1,1) and GARCH(1,1)
   xspec <- rugarch::ugarchspec(
+    mean.model = list(armaOrder = c(1, 1)),
+    variance.model = list(garchOrder = c(1,1), model = 'sGARCH'),
+    distribution.model = 'norm')
+
+  xspec1 <- rugarch::ugarchspec(
     mean.model = list(armaOrder = c(1, 1)),
     variance.model = list(garchOrder = c(1,1), model = 'sGARCH'),
     distribution.model = 'norm')
@@ -92,7 +97,12 @@ mgarch_weights <- function(train_data, y, fwd = 5){
 
   # Retrieve forecasted means
   #mean <- colMeans(fitted(fwdEst)[,,1])
-  mean <- colSums(fitted(fwdEst)[,,1])
+  if(fwd > 1){
+    mean <- colSums(fitted(fwdEst)[,,1])
+  }else{
+    mean <- fitted(fwdEst)[,,1]
+  }
+
   # Use forecasted means and coviarance to calculate optimal weights
   ols <- metafor::matreg(y = y, x = x, R = cov, cov = T, means = mean, n = n)
   coeff <- setNames(-ols$tab$beta, rownames(ols$tab))[-1]

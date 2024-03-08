@@ -4,11 +4,11 @@ setClass(
     dates = "Date",
     assets = "Assets",
     portfolio = "list",
-    trades = "Trade_Targets"),
+    trades = "Trades"),
   prototype(
     dates = NULL,
     assets = new("Assets"),
-    trades = new("Trade_Targets")))
+    trades = new("Trades")))
 
 
 setMethod("assets", "Backtest", function(obj) obj@assets)
@@ -23,56 +23,20 @@ setMethod("secid", signature(obj = "Backtest"),
     }
   })
 
-
-
+setMethod("+", signature(e1 = "Backtest", e2 = "Trade"),
+  function(e1, e2){
+    e1@trades <- e1@trades + e2
+    return(e1)})
 
 
 
 
 backtestTradeTargets <- function(dates, trade_targets, cash_rates, initial.capital = 1000000, transaction.cost = 0){
-  dates <- sort(dates)
   # Create backtest object
-  BT <- new("Backtest", dates = dates, assets = assets(trade_targets), trades = trade_targets)
-
-  # # Create cash asset and assign it to the backtest
-  # if(length(cash_rates) == 1){
-  #   rate <- setNames(rep(cash_rates, length(dates)), dates)
-  # }
-  # cash <- CashConstantRate(rate)
-  # BT@assets<- assets(BT) + cash
-
-  # Create the initial cash position based on the initial capital supplied
-  # cash_position <- new(
-  #   "Position",
-  #   date = date,
-  #   secid = "cash",
-  #   type = class(cash)[1],
-  #   position = initial.capital,
-  #   price = 1,
-  #   value = initial.capital)
-  #
-  # portfolio <- new(
-  #   "Portfolio",
-  #   date = dates[1],
-  #   capital = initial.capital,
-  #   value = initial.capital,
-  #   cash = initial.capital)
-
-
-
-  # option_trade_tgt_first <-
-  #   trade_targets@trade_targets[which(secid(trade_targets)!= "BIZD" & getTradeDate(trade_targets) == dates[1])]
-  #
-  # cost_option_trade_tgt_first <- -sum(sapply(option_trade_tgt_first, \(x) x@cost))
-  #
-  # # Make first BIZD Trade
-  # firstday_trades_BIZD <- which(secid(secid(trade_targets) == "BIZD") & )
-
-
-
+  BT <- new("Backtest", dates = dates, assets = assets(trade_targets))
   for(dateloc in 1:length(dates)){
     date <- dates[[dateloc]]
-
+    print(date)
     if(dateloc == 1){
       portfolio <- new(
         "Portfolio",
@@ -88,6 +52,7 @@ backtestTradeTargets <- function(dates, trade_targets, cash_rates, initial.capit
       BIZD_buy_tgt <- trade_targets@trade_targets[[BIZD_buy_loc]]
       BIZD_trade <- target2trade(BIZD_buy_tgt, portfolio@cash, transaction.cost)
       portfolio <- addTrades(portfolio, BIZD_trade)
+      BT@trades <- BT@trades + BIZD_trade
 
     }else{
       portfolio <- updatePortfolio(BT@portfolio[[dateloc - 1]], BT@assets, date)
@@ -99,9 +64,7 @@ backtestTradeTargets <- function(dates, trade_targets, cash_rates, initial.capit
       trade_type(trade_targets) == "Close")
     if(length(option_close_loc)!=0){
       option_close_target <- trade_targets@trade_targets[option_close_loc]
-
       for(option in option_close_target){
-
         current_pos <- portfolio@positions@positions[[which(secid(option) == secid(portfolio))]]
         trade <- target2trade(
           option,
@@ -109,8 +72,17 @@ backtestTradeTargets <- function(dates, trade_targets, cash_rates, initial.capit
           trade.cost = transaction.cost,
           options.current = current_pos@position)
         portfolio <- addTrades(portfolio, trade)
+        BT@trades <- BT@trades + trade
       }
-
+      BIZD_trade_tgt <- newTradeTarget(
+        BIZD,
+        trade_date = date,
+        target_amount = portfolio@cash,
+        target_type = "Dollar",
+        side = ifelse(portfolio@cash > 0, "Buy", "Sell"))
+      BIZD_trade <- target2trade(BIZD_trade_tgt, trade.cost = transaction.cost)
+      portfolio <- addTrades(portfolio, BIZD_trade)
+      BT@trades <- BT@trades + BIZD_trade
     }
 
     option_open_loc <- which(
@@ -134,16 +106,16 @@ backtestTradeTargets <- function(dates, trade_targets, cash_rates, initial.capit
         side = ifelse(option_open_cost_tot > 0, "Sell", "Buy"))
       BIZD_trade <- target2trade(BIZD_trade_tgt, trade.cost = transaction.cost)
       portfolio <- addTrades(portfolio, BIZD_trade)
+      BT@trades <- BT@trades + BIZD_trade
       existingBIZD <- value(portfolio@positions@positions[[which(secid(portfolio@positions)=="BIZD")]])
 
       for(option in option_open_target){
         trade <- target2trade(option, existingBIZD, transaction.cost)
         portfolio <- addTrades(portfolio, trade)
+        BT@trades <- BT@trades + trade
       }
     }
-
-
     BT@portfolio <- c(BT@portfolio, portfolio)
-
   }
+  return(BT)
 }

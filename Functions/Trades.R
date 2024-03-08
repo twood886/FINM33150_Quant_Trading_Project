@@ -8,18 +8,25 @@ setClass(
   representation(
     date = "Date",
     secid = "character",
-    asset = "Asset",
     dollar_amount = "numeric",
     number = "numeric",
     side = "character",
-    trade.cost = "numeric"))
+    trade.cost = "numeric",
+    trade.price = "numeric",
+    price = "numeric",
+    type = "character"))
 
 setClass(
   "Trades",
   representation(trades = "list"),
   prototype(trades = NULL),
   validity = function(object){
-    all(sapply(object@trades), \(x) c("Trade") %in% is(x))})
+    all(sapply(object@trades, \(x) c("Trade") %in% is(x)))})
+
+setMethod("+", signature(e1 = "Trades", e2 = "Trade"),
+  function(e1, e2) return(new("Trades",trades = c(e1@trades, e2))))
+
+
 
 # # Trade_Target (S4 Class) -----------------------------------------------
 # The following classes and methods are for "Trade_Target" S4 Objects
@@ -89,17 +96,31 @@ setMethod("newTradeTarget", signature(obj = "Option"),
 
     if(target_type == "Close"){
       pct <- -(target_amount)
-      target_amount <- -1
+      if(target_amount > 0){
+        target_amount <- -1
+      }else{
+        target_amount <- 1
+      }
     }else{
       pct <- target_amount
     }
 
+    if(trade_date == as.Date(obj@exdate)){
+      if("Option_Put" %in% is(obj)){
+        price <- max(0, (obj@strike_price - underlying_price))
+      }else if("Option_Call" %in% is(obj)){
+        price <- max(0, (underlying_price - obj@strike_price))
+      }else{
+        price <- obj@best_mid[[as.character(trade_date)]]
+      }
+    }else{
+      price <- obj@best_mid[[as.character(trade_date)]]
+    }
+
     if(pct > 0){
       side = "Buy"
-      price <- obj@best_offer[[as.character(trade_date)]]
     }else{
       side = "Sell"
-      price <- obj@best_bid[[as.character(trade_date)]]
     }
 
     return(
@@ -141,7 +162,7 @@ setMethod("target2trade", signature(obj = "Trade_Target_Equity"),
   function(obj, amount=1, trade.cost){
 
     trade_date <- obj@trade_date
-    trade_price <- obj@price
+    trade_price <- as.numeric(obj@price)
 
     if(obj@target_type == "Open"){
       trade_share_number <- (amount * obj@target_amount) %/% (trade_price * (1+trade.cost))
@@ -160,11 +181,13 @@ setMethod("target2trade", signature(obj = "Trade_Target_Equity"),
     new("Trade",
       date = obj@trade_date,
       secid = secid(obj),
-      asset = obj@asset,
       dollar_amount = as.numeric(trade_dollar_amount),
       side = obj@side,
       trade.cost = as.numeric(trade_cost),
-      number = as.numeric(trade_share_number))
+      number = as.numeric(trade_share_number),
+      trade.price = trade_price,
+      price = price(obj@asset, trade_date),
+      type = is(obj@asset)[[1]])
     })
 
 
@@ -174,14 +197,14 @@ setMethod("target2trade", signature(obj = "Trade_Target_Option"),
   function(obj, amount, trade.cost, options.current = 0){
 
     trade_date <- obj@trade_date
-    trade_price <- obj@price
+    trade_price <- as.numeric(obj@price)
     underlying_price <- obj@asset@underlying_close[[as.character(trade_date)]]
 
     if(obj@target_type == "Open"){
       tgt_trade_dollar_amount = (obj@target_amount * amount)
       trade_option_number = tgt_trade_dollar_amount %/% underlying_price %/% 100 * 100
     }else if(obj@target_type == "Close"){
-      trade_option_number <- options.current
+      trade_option_number <- -options.current
     }
 
     trade_dollar_amount <- trade_option_number * trade_price
@@ -190,11 +213,13 @@ setMethod("target2trade", signature(obj = "Trade_Target_Option"),
     new("Trade",
       date = obj@trade_date,
       secid = secid(obj),
-      asset = obj@asset,
       dollar_amount = trade_dollar_amount,
       side = obj@side,
       trade.cost = trade_cost,
-      number = trade_option_number)
+      number = trade_option_number,
+      trade.price = trade_price,
+      price = price(obj@asset, trade_date),
+      type = is(obj@asset)[[1]])
   })
 
 setMethod("arrange", signature(obj = "Trade_Targets"),

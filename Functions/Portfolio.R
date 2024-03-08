@@ -36,9 +36,9 @@ setMethod("addTrades", signature(obj1 = "Portfolio", obj2 = "Trade"),
     newposition <- new("Position",
       date = date,
       secid = obj2@secid,
-      type = is(obj2@asset)[[1]],
+      type = obj2@type,
       position = obj2@number,
-      price = price(obj2@asset, obj2@date),
+      price = obj2@price,
       value = obj2@dollar_amount)
 
     positions <- obj1@positions + newposition
