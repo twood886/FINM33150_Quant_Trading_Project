@@ -1,0 +1,41 @@
+\ Model option_weights_copy
+\ LP format - for model browsing. Use MPS format to capture full model detail.
+Minimize
+ 
+Subject To
+ Def_deviation_sum: 0.0984032515604587 weights[0]
+   + 0.0947742778342285 weights[1] + 0.0911453041079983 weights[2]
+   + 0.0875163303817681 weights[3] + 0.0838873566555378 weights[4]
+   + 0.0766294092030774 weights[5] + 0.0693714617506169 weights[6]
+   + 0.0621135142981565 weights[7] + 0.054855566845696 weights[8]
+   + 0.0475976193932356 weights[9] + 0.0403396719407752 weights[10]
+   + 0.0979677747133111 weights[11] + 0.0943388009870808 weights[12]
+   + 0.0907098272608506 weights[13] + 0.0870808535346204 weights[14]
+   + 0.0834518798083902 weights[15] + 0.07982290608216 weights[16]
+   + 0.0761939323559297 weights[17] + 0.0725649586296995 weights[18]
+   + 0.0689359849034693 weights[19] + 0.0653070111772391 weights[20]
+   + 0.0616780374510089 weights[21] + 0.0580490637247786 weights[22]
+   + 0.0544200899985484 weights[23] + 0.0507911162723182 weights[24]
+   + 0.047162142546088 weights[25] + 0.0435331688198577 weights[26]
+   + 0.0399041950936275 weights[27] + 0.0362752213673973 weights[28]
+   + 0.0326462476411671 weights[29] + 0.0290172739149369 weights[30]
+   + deviation_sum = 0
+ call_weight_sum: weights[0] + weights[1] + weights[2] + weights[3]
+   + weights[4] + weights[5] + weights[6] + weights[7] + weights[8]
+   + weights[9] + weights[10] = 50
+ put_weight_sum: weights[11] + weights[12] + weights[13] + weights[14]
+   + weights[15] + weights[16] + weights[17] + weights[18] + weights[19]
+   + weights[20] + weights[21] + weights[22] + weights[23] + weights[24]
+   + weights[25] + weights[26] + weights[27] + weights[28] + weights[29]
+   + weights[30] = 50
+Bounds
+ weights[10] free
+ weights[30] free
+Generals
+ weights[0] weights[1] weights[2] weights[3] weights[4] weights[5]
+ weights[6] weights[7] weights[8] weights[9] weights[10] weights[11]
+ weights[12] weights[13] weights[14] weights[15] weights[16] weights[17]
+ weights[18] weights[19] weights[20] weights[21] weights[22] weights[23]
+ weights[24] weights[25] weights[26] weights[27] weights[28] weights[29]
+ weights[30]
+End
