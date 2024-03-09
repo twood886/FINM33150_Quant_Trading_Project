@@ -36,7 +36,6 @@ backtestTradeTargets <- function(dates, trade_targets, cash_rates, initial.capit
   BT <- new("Backtest", dates = dates, assets = assets(trade_targets))
   for(dateloc in 1:length(dates)){
     date <- dates[[dateloc]]
-    print(date)
     if(dateloc == 1){
       portfolio <- new(
         "Portfolio",
@@ -119,3 +118,4 @@ backtestTradeTargets <- function(dates, trade_targets, cash_rates, initial.capit
   }
   return(BT)
 }
+
