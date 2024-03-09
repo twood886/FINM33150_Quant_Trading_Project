@@ -14,7 +14,8 @@ setClass(
     trade.cost = "numeric",
     trade.price = "numeric",
     price = "numeric",
-    type = "character"))
+    type = "character",
+    open.close = "character"))
 
 setClass(
   "Trades",
@@ -220,7 +221,7 @@ setMethod("target2trade", signature(obj = "Trade_Target_Option"),
       trade.price = trade_price,
       price = price(obj@asset, trade_date),
       type = is(obj@asset)[[1]],
-      open.close = )
+      open.close = obj@target_type)
   })
 
 setMethod("arrange", signature(obj = "Trade_Targets"),
