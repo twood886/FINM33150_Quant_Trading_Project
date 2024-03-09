@@ -211,7 +211,7 @@ setMethod("target2trade", signature(obj = "Trade_Target_Option"),
     trade_cost <- abs(trade_dollar_amount) * trade.cost
 
     new("Trade",
-      date = obj@trade_date,
+      date = trade_date,
       secid = secid(obj),
       dollar_amount = trade_dollar_amount,
       side = obj@side,
@@ -219,7 +219,8 @@ setMethod("target2trade", signature(obj = "Trade_Target_Option"),
       number = trade_option_number,
       trade.price = trade_price,
       price = price(obj@asset, trade_date),
-      type = is(obj@asset)[[1]])
+      type = is(obj@asset)[[1]],
+      open.close = )
   })
 
 setMethod("arrange", signature(obj = "Trade_Targets"),
