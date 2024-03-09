@@ -26,6 +26,19 @@ makeReturnPlots <- function(name, data, datecol, pricecol=NULL, returncol = NULL
         `return` = `price` / lag(`price`, 1) -1,
         `log_return` = log(`price`) - log(lag(`price`,1)),
         `index` = cumprod(1 + tidyr::replace_na(`return`, 0)))
+  }else{
+    return_data_daily <- data %>%
+      dplyr::select({{datecol}}, {{returncol}}) %>%
+      dplyr::rename(
+        `date` = {{datecol}},
+        `return` = {{returncol}}) %>%
+      dplyr::arrange(`date`) %>%
+      dplyr::mutate(
+        `start` = `date`,
+        `price` = cumprod(1+`return`),
+        `log_return` = log(1+`return`),
+        `log_return` = log(`price`) - log(lag(`price`,1)),
+        `index` = cumprod(1 + tidyr::replace_na(`return`, 0)))
   }
 
   return_data_weekly <- return_data_daily %>%
@@ -444,3 +457,30 @@ plot_roll_corr <- function(names, data, frq, n){
       title = title)
   return(p)
 }
+
+plot_optimal_hedge_weights <- function(Optimal_Weights, portfolio, name){
+
+  dates <- unlist(Optimal_Weights$date)
+  weights <- dplyr::bind_rows(dplyr::pull(Optimal_Weights, {{portfolio}}))
+  data <- dplyr::mutate(weights, `date` = dates) %>%
+    tidyr::pivot_longer(cols = c(everything(), -`date`), names_to = "Security", values_to = "Weight") %>%
+    filter(`Security` != "BIZD")
+
+
+  title = paste("Optimal Hedge Weights:",name)
+  subtitle = "Replicating Portfolio Optimal Weights"
+  p <- data %>%
+    ggplot() +
+    aes(x = date, y = Weight, colour = Security) +
+    geom_line() +
+    scale_color_hue(direction = 1) +
+    theme_classic() +
+    scale_y_continuous(labels = scales::percent_format())+
+    labs(
+      x = "Date",
+      y = "Optimal Linear Exposue to BIZD",
+      title = title,
+      subtitle = subtitle)
+  return(p)
+}
+
